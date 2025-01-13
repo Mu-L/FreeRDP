@@ -21,9 +21,12 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <stdint.h>
 
+#include <winpr/assert.h>
 #include <winpr/crt.h>
 
+#include <freerdp/utils/string.h>
 #include <freerdp/types.h>
 #include <freerdp/locale/keyboard.h>
 #include <freerdp/locale/locale.h>
@@ -51,6 +54,11 @@ static WINPR_KEYCODE_TYPE maptype = WINPR_KEYCODE_TYPE_NONE;
 static DWORD VIRTUAL_SCANCODE_TO_X11_KEYCODE[256][2] = { 0 };
 static DWORD X11_KEYCODE_TO_VIRTUAL_SCANCODE[256] = { 0 };
 static DWORD REMAPPING_TABLE[0x10000] = { 0 };
+
+struct rdp_remap_table
+{
+	DWORD table[0x10000];
+};
 
 struct scancode_map_entry
 {
@@ -255,15 +263,16 @@ static int freerdp_detect_keyboard(DWORD* keyboardLayoutId)
 	return 0;
 }
 
-static int freerdp_keyboard_init_apple(DWORD* keyboardLayoutId, DWORD* x11_keycode_to_rdp_scancode,
-                                       size_t count)
+static int freerdp_keyboard_init_apple(const DWORD* keyboardLayoutId,
+                                       DWORD* x11_keycode_to_rdp_scancode, size_t count)
 {
 	WINPR_ASSERT(x11_keycode_to_rdp_scancode);
 	WINPR_ASSERT(keyboardLayoutId);
-
+	WINPR_ASSERT(count <= UINT32_MAX);
 	for (size_t keycode = 8; keycode < count; keycode++)
 	{
-		const DWORD vkcode = GetVirtualKeyCodeFromKeycode(keycode - 8u, WINPR_KEYCODE_TYPE_APPLE);
+		const DWORD vkcode =
+		    GetVirtualKeyCodeFromKeycode((UINT32)keycode - 8u, WINPR_KEYCODE_TYPE_APPLE);
 		x11_keycode_to_rdp_scancode[keycode] =
 		    GetVirtualScanCodeFromVirtualKeyCode(vkcode, WINPR_KBD_TYPE_IBM_ENHANCED);
 	}
@@ -272,14 +281,17 @@ static int freerdp_keyboard_init_apple(DWORD* keyboardLayoutId, DWORD* x11_keyco
 	return 0;
 }
 
-static int freerdp_keyboard_init_x11_evdev(DWORD* keyboardLayoutId,
+static int freerdp_keyboard_init_x11_evdev(const DWORD* keyboardLayoutId,
                                            DWORD* x11_keycode_to_rdp_scancode, size_t count)
 {
 	WINPR_ASSERT(keyboardLayoutId);
 	WINPR_ASSERT(x11_keycode_to_rdp_scancode);
+	WINPR_ASSERT(count <= UINT32_MAX);
+
 	for (size_t keycode = 0; keycode < count; keycode++)
 	{
-		const DWORD vkcode = GetVirtualKeyCodeFromKeycode(keycode, WINPR_KEYCODE_TYPE_EVDEV);
+		const DWORD vkcode =
+		    GetVirtualKeyCodeFromKeycode((UINT32)keycode, WINPR_KEYCODE_TYPE_EVDEV);
 		x11_keycode_to_rdp_scancode[keycode] =
 		    GetVirtualScanCodeFromVirtualKeyCode(vkcode, WINPR_KBD_TYPE_IBM_ENHANCED);
 	}
@@ -290,7 +302,6 @@ static int freerdp_keyboard_init_x11_evdev(DWORD* keyboardLayoutId,
 
 DWORD freerdp_keyboard_init(DWORD keyboardLayoutId)
 {
-	DWORD keycode;
 	int status = -1;
 
 #if defined(__APPLE__)
@@ -324,15 +335,62 @@ DWORD freerdp_keyboard_init(DWORD keyboardLayoutId)
 
 	ZeroMemory(VIRTUAL_SCANCODE_TO_X11_KEYCODE, sizeof(VIRTUAL_SCANCODE_TO_X11_KEYCODE));
 
-	for (keycode = 0; keycode < ARRAYSIZE(VIRTUAL_SCANCODE_TO_X11_KEYCODE); keycode++)
+	WINPR_STATIC_ASSERT(ARRAYSIZE(VIRTUAL_SCANCODE_TO_X11_KEYCODE) <= UINT32_MAX);
+	for (size_t keycode = 0; keycode < ARRAYSIZE(VIRTUAL_SCANCODE_TO_X11_KEYCODE); keycode++)
 	{
 		const DWORD x11 = X11_KEYCODE_TO_VIRTUAL_SCANCODE[keycode];
 		const DWORD sc = RDP_SCANCODE_CODE(x11);
 		const BOOL ex = RDP_SCANCODE_EXTENDED(x11);
-		VIRTUAL_SCANCODE_TO_X11_KEYCODE[sc][ex ? 1 : 0] = keycode;
+		VIRTUAL_SCANCODE_TO_X11_KEYCODE[sc][ex ? 1 : 0] = (UINT32)keycode;
 	}
 
 	return keyboardLayoutId;
+}
+
+FREERDP_REMAP_TABLE* freerdp_keyboard_remap_string_to_list(const char* list)
+{
+	const size_t remap_table_size = 0x10000;
+
+	FREERDP_REMAP_TABLE* remap_table = calloc(1, sizeof(FREERDP_REMAP_TABLE));
+	if (!remap_table)
+		return NULL;
+
+	for (size_t x = 0; x < ARRAYSIZE(remap_table->table); x++)
+		remap_table->table[x] = (UINT32)x;
+
+	if (!list)
+		return remap_table;
+
+	BOOL success = FALSE;
+	char* copy = _strdup(list);
+	if (!copy)
+		goto fail;
+
+	char* context = NULL;
+	char* token = strtok_s(copy, ",", &context);
+	while (token)
+	{
+		DWORD key = 0;
+		DWORD value = 0;
+		if (!freerdp_extract_key_value(token, &key, &value))
+			goto fail;
+		if (key >= remap_table_size)
+			goto fail;
+		remap_table->table[key] = value;
+		token = strtok_s(NULL, ",", &context);
+	}
+
+	success = TRUE;
+
+fail:
+	free(copy);
+
+	if (!success)
+	{
+		free(remap_table);
+		return NULL;
+	}
+	return remap_table;
 }
 
 DWORD freerdp_keyboard_init_ex(DWORD keyboardLayoutId, const char* keyboardRemappingList)
@@ -344,21 +402,15 @@ DWORD freerdp_keyboard_init_ex(DWORD keyboardLayoutId, const char* keyboardRemap
 	{
 		char* copy = _strdup(keyboardRemappingList);
 		char* context = NULL;
-		char* token;
+		char* token = NULL;
 		if (!copy)
 			goto fail;
 		token = strtok_s(copy, ",", &context);
 		while (token)
 		{
-			DWORD key, value;
-			int rc = sscanf(token, "%" PRIu32 "=%" PRIu32, &key, &value);
-			if (rc != 2)
-				rc = sscanf(token, "%" PRIx32 "=%" PRIx32 "", &key, &value);
-			if (rc != 2)
-				rc = sscanf(token, "%" PRIu32 "=%" PRIx32, &key, &value);
-			if (rc != 2)
-				rc = sscanf(token, "%" PRIx32 "=%" PRIu32, &key, &value);
-			if (rc != 2)
+			DWORD key = 0;
+			DWORD value = 0;
+			if (!freerdp_extract_key_value(token, &key, &value))
 				goto fail;
 			if (key >= ARRAYSIZE(REMAPPING_TABLE))
 				goto fail;
@@ -373,7 +425,21 @@ DWORD freerdp_keyboard_init_ex(DWORD keyboardLayoutId, const char* keyboardRemap
 
 DWORD freerdp_keyboard_get_rdp_scancode_from_x11_keycode(DWORD keycode)
 {
+	if (keycode >= ARRAYSIZE(X11_KEYCODE_TO_VIRTUAL_SCANCODE))
+	{
+		WLog_ERR(TAG, "KeyCode %" PRIu32 " exceeds allowed value range [0,%" PRIuz "]", keycode,
+		         ARRAYSIZE(X11_KEYCODE_TO_VIRTUAL_SCANCODE));
+		return 0;
+	}
+
 	const DWORD scancode = X11_KEYCODE_TO_VIRTUAL_SCANCODE[keycode];
+	if (scancode >= ARRAYSIZE(REMAPPING_TABLE))
+	{
+		WLog_ERR(TAG, "ScanCode %" PRIu32 " exceeds allowed value range [0,%" PRIuz "]", scancode,
+		         ARRAYSIZE(REMAPPING_TABLE));
+		return 0;
+	}
+
 	const DWORD remapped = REMAPPING_TABLE[scancode];
 #if defined(WITH_DEBUG_KBD)
 	const BOOL ex = RDP_SCANCODE_EXTENDED(scancode);
@@ -400,6 +466,13 @@ DWORD freerdp_keyboard_get_rdp_scancode_from_x11_keycode(DWORD keycode)
 
 DWORD freerdp_keyboard_get_x11_keycode_from_rdp_scancode(DWORD scancode, BOOL extended)
 {
+	if (scancode >= ARRAYSIZE(VIRTUAL_SCANCODE_TO_X11_KEYCODE))
+	{
+		WLog_ERR(TAG, "ScanCode %" PRIu32 " exceeds allowed value range [0,%" PRIuz "]", scancode,
+		         ARRAYSIZE(VIRTUAL_SCANCODE_TO_X11_KEYCODE));
+		return 0;
+	}
+
 	const DWORD* x11 = VIRTUAL_SCANCODE_TO_X11_KEYCODE[scancode];
 	WINPR_ASSERT(x11);
 
@@ -411,9 +484,7 @@ DWORD freerdp_keyboard_get_x11_keycode_from_rdp_scancode(DWORD scancode, BOOL ex
 
 const char* freerdp_keyboard_scancode_name(DWORD scancode)
 {
-	size_t x;
-
-	for (x = 0; x < ARRAYSIZE(RDP_SCANCODE_MAP); x++)
+	for (size_t x = 0; x < ARRAYSIZE(RDP_SCANCODE_MAP); x++)
 	{
 		const struct scancode_map_entry* entry = &RDP_SCANCODE_MAP[x];
 		if (entry->scancode == scancode)
@@ -421,4 +492,17 @@ const char* freerdp_keyboard_scancode_name(DWORD scancode)
 	}
 
 	return NULL;
+}
+
+DWORD freerdp_keyboard_remap_key(const FREERDP_REMAP_TABLE* remap_table, DWORD rdpScanCode)
+{
+	if (!remap_table || (ARRAYSIZE(remap_table->table) <= rdpScanCode))
+		return 0;
+
+	return remap_table->table[rdpScanCode];
+}
+
+void freerdp_keyboard_remap_free(FREERDP_REMAP_TABLE* table)
+{
+	free(table);
 }

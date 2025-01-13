@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 
 #include <freerdp/freerdp.h>
 #include <freerdp/server/proxy/proxy_log.h>
@@ -48,14 +49,14 @@ static BOOL channelTracker_resetCurrentPacket(ChannelStateTracker* tracker)
 	if (tracker->currentPacket)
 	{
 		const size_t cap = Stream_Capacity(tracker->currentPacket);
-		if (cap < 1 * 1000 * 1000)
+		if (cap < 1ULL * 1000ULL * 1000ULL)
 			create = FALSE;
 		else
 			Stream_Free(tracker->currentPacket, TRUE);
 	}
 
 	if (create)
-		tracker->currentPacket = Stream_New(NULL, 10 * 1024);
+		tracker->currentPacket = Stream_New(NULL, 10ULL * 1024ULL);
 	if (!tracker->currentPacket)
 		return FALSE;
 	Stream_SetPosition(tracker->currentPacket, 0);
@@ -93,9 +94,9 @@ fail:
 PfChannelResult channelTracker_update(ChannelStateTracker* tracker, const BYTE* xdata, size_t xsize,
                                       UINT32 flags, size_t totalSize)
 {
-	PfChannelResult result;
-	BOOL firstPacket = (flags & CHANNEL_FLAG_FIRST);
-	BOOL lastPacket = (flags & CHANNEL_FLAG_LAST);
+	PfChannelResult result = PF_CHANNEL_RESULT_ERROR;
+	BOOL firstPacket = (flags & CHANNEL_FLAG_FIRST) != 0;
+	BOOL lastPacket = (flags & CHANNEL_FLAG_LAST) != 0;
 
 	WINPR_ASSERT(tracker);
 
@@ -140,6 +141,8 @@ PfChannelResult channelTracker_update(ChannelStateTracker* tracker, const BYTE* 
 		case CHANNEL_TRACKER_DROP:
 			result = PF_CHANNEL_RESULT_DROP;
 			break;
+		default:
+			break;
 	}
 
 	if (lastPacket)
@@ -173,11 +176,11 @@ void channelTracker_free(ChannelStateTracker* t)
 PfChannelResult channelTracker_flushCurrent(ChannelStateTracker* t, BOOL first, BOOL last,
                                             BOOL toBack)
 {
-	proxyData* pdata;
-	pServerContext* ps;
-	pServerStaticChannelContext* channel;
+	proxyData* pdata = NULL;
+	pServerContext* ps = NULL;
+	pServerStaticChannelContext* channel = NULL;
 	UINT32 flags = CHANNEL_FLAG_FIRST;
-	BOOL r;
+	BOOL r = 0;
 	const char* direction = toBack ? "F->B" : "B->F";
 	const size_t currentPacketSize = channelTracker_getCurrentPacketSize(t);
 	wStream* currentPacket = channelTracker_getCurrentPacket(t);
@@ -197,9 +200,9 @@ PfChannelResult channelTracker_flushCurrent(ChannelStateTracker* t, BOOL first, 
 
 	if (toBack)
 	{
-		proxyChannelDataEventInfo ev;
+		proxyChannelDataEventInfo ev = { 0 };
 
-		ev.channel_id = channel->front_channel_id;
+		ev.channel_id = WINPR_ASSERTING_INT_CAST(UINT16, channel->front_channel_id);
 		ev.channel_name = channel->channel_name;
 		ev.data = Stream_Buffer(currentPacket);
 		ev.data_len = Stream_GetPosition(currentPacket);
@@ -214,9 +217,9 @@ PfChannelResult channelTracker_flushCurrent(ChannelStateTracker* t, BOOL first, 
 	}
 
 	ps = pdata->ps;
-	r = ps->context.peer->SendChannelPacket(ps->context.peer, channel->front_channel_id,
-	                                        currentPacketSize, flags, Stream_Buffer(currentPacket),
-	                                        Stream_GetPosition(currentPacket));
+	r = ps->context.peer->SendChannelPacket(
+	    ps->context.peer, WINPR_ASSERTING_INT_CAST(UINT16, channel->front_channel_id),
+	    currentPacketSize, flags, Stream_Buffer(currentPacket), Stream_GetPosition(currentPacket));
 
 	return r ? PF_CHANNEL_RESULT_DROP : PF_CHANNEL_RESULT_ERROR;
 }
@@ -234,7 +237,7 @@ static PfChannelResult pf_channel_generic_back_data(proxyData* pdata,
 	switch (channel->channelMode)
 	{
 		case PF_UTILS_CHANNEL_PASSTHROUGH:
-			ev.channel_id = channel->back_channel_id;
+			ev.channel_id = WINPR_ASSERTING_INT_CAST(UINT16, channel->back_channel_id);
 			ev.channel_name = channel->channel_name;
 			ev.data = xdata;
 			ev.data_len = xsize;
@@ -268,7 +271,7 @@ static PfChannelResult pf_channel_generic_front_data(proxyData* pdata,
 	switch (channel->channelMode)
 	{
 		case PF_UTILS_CHANNEL_PASSTHROUGH:
-			ev.channel_id = channel->front_channel_id;
+			ev.channel_id = WINPR_ASSERTING_INT_CAST(UINT16, channel->front_channel_id);
 			ev.channel_name = channel->channel_name;
 			ev.data = xdata;
 			ev.data_len = xsize;
@@ -291,6 +294,7 @@ static PfChannelResult pf_channel_generic_front_data(proxyData* pdata,
 
 BOOL pf_channel_setup_generic(pServerStaticChannelContext* channel)
 {
+	WINPR_ASSERT(channel);
 	channel->onBackData = pf_channel_generic_back_data;
 	channel->onFrontData = pf_channel_generic_front_data;
 	return TRUE;

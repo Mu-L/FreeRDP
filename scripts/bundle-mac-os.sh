@@ -22,6 +22,22 @@ usage () {
   echo "target [$DEPLOYMENT_TARGET]"
 }
 
+check_tools() {
+    for TOOL in mkdir rm mv git dirname pwd find cut basename grep xargs cmake ninja autoconf automake aclocal autoheader glibtoolize lipo otool install_name_tool;
+    do
+        set +e
+        TOOL_PATH=$(which "$TOOL")
+        set -e
+        echo "$TOOL: $TOOL_PATH"
+
+        if [ ! -f "$TOOL_PATH" ];
+        then
+            echo "Missing $TOOL! please install and add to PATH."
+            exit 1
+        fi
+    done
+}
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     -a|--arch)
@@ -48,6 +64,8 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+check_tools
 
 fix_rpath() {
 	SEARCH_PATH=$1
@@ -94,7 +112,7 @@ replace_rpath() {
 }
 
 CMAKE_ARCHS=
-OSSL_FLAGS="-mmacosx-version-min=$DEPLOYMENT_TARGET"
+OSSL_FLAGS="-mmacosx-version-min=$DEPLOYMENT_TARGET -I$INSTALL/include -L$INSTALL/lib"
 for ARCH in $DEPLOYMENT_ARCH;
 do
 	OSSL_FLAGS="$OSSL_FLAGS -arch $ARCH"
@@ -119,23 +137,24 @@ CMAKE_ARGS="-DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON \
 	-DINSTALL_BIN_DIR='$INSTALL/bin' \
 	-DCMAKE_PREFIX_PATH='$INSTALL;$INSTALL/lib;$INSTALL/lib/cmake' \
 	-DCMAKE_IGNORE_PATH='/opt/local;/usr/local;/opt/homebrew;/Library;~/Library'
+	-DCMAKE_IGNORE_PREFIX_PATH='/opt/local;/usr/local;/opt/homebrew;/Library;~/Library'
 	"
 
 if [ ! -d $SRC ];
 then
 	mkdir -p $SRC
 	cd $SRC
-	git clone -b openssl-3.2.0 https://github.com/openssl/openssl.git
-	git clone --depth 1 -b v1.3 https://github.com/madler/zlib.git
-	git clone --depth 1 -b uriparser-0.9.7 https://github.com/uriparser/uriparser.git
-	git clone --depth 1 -b v1.7.16 https://github.com/DaveGamble/cJSON.git
-	git clone --depth 1 -b release-2.28.1 https://github.com/libsdl-org/SDL.git
-	git clone --depth 1 --shallow-submodules --recurse-submodules -b release-2.20.2 https://github.com/libsdl-org/SDL_ttf.git
-	git clone --depth 1 --shallow-submodules --recurse-submodules -b release-2.8.1 https://github.com/libsdl-org/SDL_image.git
-	git clone --depth 1 --shallow-submodules --recurse-submodules -b v1.0.26 https://github.com/libusb/libusb-cmake.git
-	git clone --depth 1 -b n6.0 https://github.com/FFmpeg/FFmpeg.git
-	git clone --depth 1 -b v2.4.0 https://github.com/cisco/openh264.git
-	git clone --depth 1 -b v1.4 https://gitlab.xiph.org/xiph/opus.git
+	git clone --depth 1 -b openssl-3.3.1 https://github.com/openssl/openssl.git
+	git clone --depth 1 -b v1.3.1 https://github.com/madler/zlib.git
+	git clone --depth 1 -b uriparser-0.9.8 https://github.com/uriparser/uriparser.git
+	git clone --depth 1 -b v1.7.18 https://github.com/DaveGamble/cJSON.git
+	git clone --depth 1 -b release-2.30.4 https://github.com/libsdl-org/SDL.git
+	git clone --depth 1 --shallow-submodules --recurse-submodules -b release-2.22.0 https://github.com/libsdl-org/SDL_ttf.git
+	git clone --depth 1 --shallow-submodules --recurse-submodules -b release-2.8.2 https://github.com/libsdl-org/SDL_image.git
+	git clone --depth 1 --shallow-submodules --recurse-submodules -b v1.0.27-1 https://github.com/libusb/libusb-cmake.git
+	git clone --depth 1 -b n7.0.1 https://github.com/FFmpeg/FFmpeg.git
+	git clone --depth 1 -b v2.4.1 https://github.com/cisco/openh264.git
+	git clone --depth 1 -b v1.5.2 https://gitlab.xiph.org/xiph/opus.git
 	git clone --depth 1 -b 2.11.1 https://github.com/knik0/faad2.git
 	git clone --depth 1 -b 1.18.0 https://gitlab.freedesktop.org/cairo/cairo.git
 	git clone --depth 1 -b 1_30 https://github.com/knik0/faac.git
@@ -250,8 +269,7 @@ cd $BUILD
 cmake -GNinja -Bfreerdp -S"$SCRIPT_PATH/.." \
 	$CMAKE_ARGS \
 	-DWITH_PLATFORM_SERVER=OFF \
-	-DWITH_NEON=OFF \
-	-DWITH_SSE=OFF \
+	-DWITH_SIMD=ON \
 	-DWITH_FFMPEG=OFF \
 	-DWITH_SWSCALE=ON \
 	-DWITH_OPUS=ON \
@@ -260,7 +278,10 @@ cmake -GNinja -Bfreerdp -S"$SCRIPT_PATH/.." \
 	-DWITH_FAAC=ON \
 	-DWITH_INTERNAL_RC4=ON \
 	-DWITH_INTERNAL_MD4=ON \
-	-DWITH_INTERNAL_MD5=ON
+	-DWITH_INTERNAL_MD5=ON \
+	-DCHANNEL_RDPEAR=OFF \
+	-DWITH_CJSON_REQUIRED=ON
+
 cmake --build freerdp
 cmake --install freerdp
 

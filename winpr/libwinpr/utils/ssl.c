@@ -75,11 +75,11 @@ static void _winpr_openssl_locking(int mode, int type, const char* file, int lin
 {
 	if (mode & CRYPTO_LOCK)
 	{
-		WaitForSingleObject(g_winpr_openssl_locks[type], INFINITE);
+		(void)WaitForSingleObject(g_winpr_openssl_locks[type], INFINITE);
 	}
 	else
 	{
-		ReleaseMutex(g_winpr_openssl_locks[type]);
+		(void)ReleaseMutex(g_winpr_openssl_locks[type]);
 	}
 }
 
@@ -104,24 +104,24 @@ static void _winpr_openssl_dynlock_lock(int mode, struct CRYPTO_dynlock_value* d
 {
 	if (mode & CRYPTO_LOCK)
 	{
-		WaitForSingleObject(dynlock->mutex, INFINITE);
+		(void)WaitForSingleObject(dynlock->mutex, INFINITE);
 	}
 	else
 	{
-		ReleaseMutex(dynlock->mutex);
+		(void)ReleaseMutex(dynlock->mutex);
 	}
 }
 
 static void _winpr_openssl_dynlock_destroy(struct CRYPTO_dynlock_value* dynlock, const char* file,
                                            int line)
 {
-	CloseHandle(dynlock->mutex);
+	(void)CloseHandle(dynlock->mutex);
 	free(dynlock);
 }
 
 static BOOL _winpr_openssl_initialize_locking(void)
 {
-	int i, count;
+	int count;
 
 	/* OpenSSL static locking */
 
@@ -141,7 +141,7 @@ static BOOL _winpr_openssl_initialize_locking(void)
 				return FALSE;
 			}
 
-			for (i = 0; i < count; i++)
+			for (int i = 0; i < count; i++)
 			{
 				if (!(locks[i] = CreateMutex(NULL, FALSE, NULL)))
 				{
@@ -150,7 +150,7 @@ static BOOL _winpr_openssl_initialize_locking(void)
 					while (i--)
 					{
 						if (locks[i])
-							CloseHandle(locks[i]);
+							(void)CloseHandle(locks[i]);
 					}
 
 					free(locks);
@@ -199,12 +199,11 @@ static BOOL _winpr_openssl_cleanup_locking(void)
 	/* undo our static locking modifications */
 	if (CRYPTO_get_locking_callback() == _winpr_openssl_locking)
 	{
-		int i;
 		CRYPTO_set_locking_callback(NULL);
 
-		for (i = 0; i < g_winpr_openssl_num_locks; i++)
+		for (int i = 0; i < g_winpr_openssl_num_locks; i++)
 		{
-			CloseHandle(g_winpr_openssl_locks[i]);
+			(void)CloseHandle(g_winpr_openssl_locks[i]);
 		}
 
 		g_winpr_openssl_num_locks = 0;
@@ -256,7 +255,7 @@ static BOOL winpr_enable_fips(DWORD flags)
 		s_winpr_openssl_provider_fips = OSSL_PROVIDER_load(NULL, "fips");
 		if (s_winpr_openssl_provider_fips == NULL)
 		{
-			WLog_WARN(TAG, "OpenSSL FIPS provider failled to load");
+			WLog_WARN(TAG, "OpenSSL FIPS provider failed to load");
 		}
 		if (!EVP_default_properties_is_fips_enabled(NULL))
 #else
@@ -338,7 +337,7 @@ static BOOL CALLBACK winpr_openssl_initialize(PINIT_ONCE once, PVOID param, PVOI
 	}
 #endif
 
-	atexit(winpr_openssl_cleanup);
+	(void)atexit(winpr_openssl_cleanup);
 	g_winpr_openssl_initialized_by_winpr = TRUE;
 	return TRUE;
 }

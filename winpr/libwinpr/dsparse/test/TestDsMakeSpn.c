@@ -12,7 +12,7 @@ static BOOL test_DsMakeSpnA(void)
 	LPCSTR testSpn = "HTTP/LAB1-W2K8R2-GW.lab1.awake.local";
 	BOOL rc = FALSE;
 	CHAR Spn[100] = { 0 };
-	DWORD status;
+	DWORD status = 0;
 	DWORD SpnLength = -1;
 
 	status = DsMakeSpnA(testServiceClass, testServiceName, NULL, 0, NULL, &SpnLength, NULL);
@@ -73,14 +73,14 @@ static BOOL test_DsMakeSpnW(void)
 
 	BOOL rc = FALSE;
 	WCHAR Spn[100] = { 0 };
-	DWORD status;
+	DWORD status = 0;
 	DWORD SpnLength = -1;
 
-	ConvertUtf8NToWChar(ctestServiceClass, ARRAYSIZE(ctestServiceClass), testServiceClass,
-	                    ARRAYSIZE(testServiceClass));
-	ConvertUtf8NToWChar(ctestServiceName, ARRAYSIZE(ctestServiceName), testServiceName,
-	                    ARRAYSIZE(testServiceName));
-	ConvertUtf8NToWChar(ctestSpn, ARRAYSIZE(ctestSpn), testSpn, ARRAYSIZE(testSpn));
+	(void)ConvertUtf8NToWChar(ctestServiceClass, ARRAYSIZE(ctestServiceClass), testServiceClass,
+	                          ARRAYSIZE(testServiceClass));
+	(void)ConvertUtf8NToWChar(ctestServiceName, ARRAYSIZE(ctestServiceName), testServiceName,
+	                          ARRAYSIZE(testServiceName));
+	(void)ConvertUtf8NToWChar(ctestSpn, ARRAYSIZE(ctestSpn), testSpn, ARRAYSIZE(testSpn));
 
 	status = DsMakeSpnW(testServiceClass, testServiceName, NULL, 0, NULL, &SpnLength, NULL);
 
@@ -120,8 +120,8 @@ static BOOL test_DsMakeSpnW(void)
 		char* SpnA = buffer1;
 		char* testSpnA = buffer2;
 
-		ConvertWCharToUtf8(Spn, SpnA, ARRAYSIZE(buffer1));
-		ConvertWCharToUtf8(testSpn, testSpnA, ARRAYSIZE(buffer2));
+		(void)ConvertWCharToUtf8(Spn, SpnA, ARRAYSIZE(buffer1));
+		(void)ConvertWCharToUtf8(testSpn, testSpnA, ARRAYSIZE(buffer2));
 		printf("DsMakeSpnW: SPN mismatch: Actual: %s, Expected: %s\n", SpnA, testSpnA);
 		goto fail;
 	}
@@ -130,7 +130,7 @@ static BOOL test_DsMakeSpnW(void)
 		char buffer[8192] = { 0 };
 		char* SpnA = buffer;
 
-		ConvertWCharToUtf8(Spn, SpnA, ARRAYSIZE(buffer));
+		(void)ConvertWCharToUtf8(Spn, SpnA, ARRAYSIZE(buffer));
 		printf("DsMakeSpnW: %s\n", SpnA);
 	}
 

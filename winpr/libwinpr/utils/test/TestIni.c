@@ -39,11 +39,11 @@ static const char TEST_INI_03[] = "[FreeRDS]\n"
 int TestIni(int argc, char* argv[])
 {
 	int rc = -1;
-	size_t nKeys;
-	size_t nSections;
-	UINT32 iValue;
+	size_t nKeys = 0;
+	size_t nSections = 0;
+	UINT32 iValue = 0;
 	wIniFile* ini = NULL;
-	const char* sValue;
+	const char* sValue = NULL;
 	char** keyNames = NULL;
 	char** sectionNames = NULL;
 
@@ -58,14 +58,14 @@ int TestIni(int argc, char* argv[])
 	if (IniFile_ReadBuffer(ini, TEST_INI_01) < 0)
 		goto fail;
 
-	free(sectionNames);
+	free((void*)sectionNames);
 	sectionNames = IniFile_GetSectionNames(ini, &nSections);
 	if (!sectionNames && (nSections > 0))
 		goto fail;
 
 	for (size_t i = 0; i < nSections; i++)
 	{
-		free(keyNames);
+		free((void*)keyNames);
 		keyNames = IniFile_GetSectionKeyNames(ini, sectionNames[i], &nKeys);
 		printf("[%s]\n", sectionNames[i]);
 		if (!keyNames && (nKeys > 0))
@@ -124,14 +124,14 @@ int TestIni(int argc, char* argv[])
 		goto fail;
 	if (IniFile_ReadBuffer(ini, TEST_INI_02) < 0)
 		goto fail;
-	free(sectionNames);
+	free((void*)sectionNames);
 	sectionNames = IniFile_GetSectionNames(ini, &nSections);
 	if (!sectionNames && (nSections > 0))
 		goto fail;
 
 	for (size_t i = 0; i < nSections; i++)
 	{
-		free(keyNames);
+		free((void*)keyNames);
 		keyNames = IniFile_GetSectionKeyNames(ini, sectionNames[i], &nKeys);
 		printf("[%s]\n", sectionNames[i]);
 
@@ -153,8 +153,8 @@ int TestIni(int argc, char* argv[])
 
 	rc = 0;
 fail:
-	free(keyNames);
-	free(sectionNames);
+	free((void*)keyNames);
+	free((void*)sectionNames);
 	IniFile_Free(ini);
 	return rc;
 }

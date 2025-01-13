@@ -28,6 +28,7 @@
 #include <X11/Xutil.h>
 
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 #include <winpr/crt.h>
 
 #include <freerdp/log.h>
@@ -55,9 +56,10 @@
 
 int xf_list_monitors(xfContext* xfc)
 {
-	Display* display;
-	int major, minor;
-	int i, nmonitors = 0;
+	Display* display = NULL;
+	int major = 0;
+	int minor = 0;
+	int nmonitors = 0;
 	display = XOpenDisplay(NULL);
 
 	if (!display)
@@ -74,7 +76,7 @@ int xf_list_monitors(xfContext* xfc)
 		XRRMonitorInfo* monitors =
 		    XRRGetMonitors(display, DefaultRootWindow(display), 1, &nmonitors);
 
-		for (i = 0; i < nmonitors; i++)
+		for (int i = 0; i < nmonitors; i++)
 		{
 			printf("      %s [%d] %dx%d\t+%d+%d\n", monitors[i].primary ? "*" : " ", i,
 			       monitors[i].width, monitors[i].height, monitors[i].x, monitors[i].y);
@@ -91,7 +93,7 @@ int xf_list_monitors(xfContext* xfc)
 		{
 			XineramaScreenInfo* screen = XineramaQueryScreens(display, &nmonitors);
 
-			for (i = 0; i < nmonitors; i++)
+			for (int i = 0; i < nmonitors; i++)
 			{
 				printf("      %s [%d] %hdx%hd\t+%hd+%hd\n", (i == 0) ? "*" : " ", i,
 				       screen[i].width, screen[i].height, screen[i].x_org, screen[i].y_org);
@@ -114,8 +116,7 @@ int xf_list_monitors(xfContext* xfc)
 
 static BOOL xf_is_monitor_id_active(xfContext* xfc, UINT32 id)
 {
-	UINT32 index;
-	const rdpSettings* settings;
+	const rdpSettings* settings = NULL;
 
 	WINPR_ASSERT(xfc);
 
@@ -126,7 +127,7 @@ static BOOL xf_is_monitor_id_active(xfContext* xfc, UINT32 id)
 	if (NumMonitorIds == 0)
 		return TRUE;
 
-	for (index = 0; index < NumMonitorIds; index++)
+	for (UINT32 index = 0; index < NumMonitorIds; index++)
 	{
 		const UINT32* cur = freerdp_settings_get_pointer_array(settings, FreeRDP_MonitorIds, index);
 		if (cur && (*cur == id))
@@ -139,17 +140,19 @@ static BOOL xf_is_monitor_id_active(xfContext* xfc, UINT32 id)
 BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 {
 	BOOL rc = FALSE;
-	int nmonitors = 0;
 	UINT32 monitor_index = 0;
 	BOOL primaryMonitorFound = FALSE;
 	VIRTUAL_SCREEN* vscreen = NULL;
 	rdpSettings* settings = NULL;
-	int mouse_x = 0, mouse_y = 0, _dummy_i = 0;
+	int mouse_x = 0;
+	int mouse_y = 0;
+	int _dummy_i = 0;
 	Window _dummy_w = 0;
-	int current_monitor = 0;
+	UINT32 current_monitor = 0;
 	Screen* screen = NULL;
 #if defined WITH_XINERAMA || defined WITH_XRANDR
-	int major = 0, minor = 0;
+	int major = 0;
+	int minor = 0;
 #endif
 #if defined(USABLE_XRANDR)
 	XRRMonitorInfo* rrmonitors = NULL;
@@ -183,24 +186,27 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 	if (XRRQueryExtension(xfc->display, &major, &minor) &&
 	    (XRRQueryVersion(xfc->display, &major, &minor) == True) && (major * 100 + minor >= 105))
 	{
-		rrmonitors =
-		    XRRGetMonitors(xfc->display, DefaultRootWindow(xfc->display), 1, &vscreen->nmonitors);
+		int nmonitors = 0;
+		rrmonitors = XRRGetMonitors(xfc->display, DefaultRootWindow(xfc->display), 1, &nmonitors);
 
-		if (vscreen->nmonitors > 16)
+		if ((nmonitors < 0) || (nmonitors > 16))
 			vscreen->nmonitors = 0;
+		else
+			vscreen->nmonitors = (UINT32)nmonitors;
 
 		if (vscreen->nmonitors)
 		{
-			int i;
-
-			for (i = 0; i < vscreen->nmonitors; i++)
+			for (UINT32 i = 0; i < vscreen->nmonitors; i++)
 			{
 				MONITOR_INFO* cur_vscreen = &vscreen->monitors[i];
 				const XRRMonitorInfo* cur_monitor = &rrmonitors[i];
-				cur_vscreen->area.left = cur_monitor->x;
-				cur_vscreen->area.top = cur_monitor->y;
-				cur_vscreen->area.right = cur_monitor->x + cur_monitor->width - 1;
-				cur_vscreen->area.bottom = cur_monitor->y + cur_monitor->height - 1;
+
+				cur_vscreen->area.left = WINPR_ASSERTING_INT_CAST(UINT16, cur_monitor->x);
+				cur_vscreen->area.top = WINPR_ASSERTING_INT_CAST(UINT16, cur_monitor->y);
+				cur_vscreen->area.right =
+				    WINPR_ASSERTING_INT_CAST(UINT16, cur_monitor->x + cur_monitor->width - 1);
+				cur_vscreen->area.bottom =
+				    WINPR_ASSERTING_INT_CAST(UINT16, cur_monitor->y + cur_monitor->height - 1);
 				cur_vscreen->primary = cur_monitor->primary > 0;
 			}
 		}
@@ -212,22 +218,25 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 #ifdef WITH_XINERAMA
 	    if (XineramaQueryExtension(xfc->display, &major, &minor) && XineramaIsActive(xfc->display))
 	{
-		XineramaScreenInfo* screenInfo = XineramaQueryScreens(xfc->display, &vscreen->nmonitors);
+		int nmonitors = 0;
+		XineramaScreenInfo* screenInfo = XineramaQueryScreens(xfc->display, &nmonitors);
 
-		if (vscreen->nmonitors > 16)
+		if ((nmonitors < 0) || (nmonitors > 16))
 			vscreen->nmonitors = 0;
+		else
+			vscreen->nmonitors = (UINT32)nmonitors;
 
 		if (vscreen->nmonitors)
 		{
-			int i;
-
-			for (i = 0; i < vscreen->nmonitors; i++)
+			for (UINT32 i = 0; i < vscreen->nmonitors; i++)
 			{
 				MONITOR_INFO* monitor = &vscreen->monitors[i];
-				monitor->area.left = screenInfo[i].x_org;
-				monitor->area.top = screenInfo[i].y_org;
-				monitor->area.right = screenInfo[i].x_org + screenInfo[i].width - 1;
-				monitor->area.bottom = screenInfo[i].y_org + screenInfo[i].height - 1;
+				monitor->area.left = WINPR_ASSERTING_INT_CAST(uint16_t, screenInfo[i].x_org);
+				monitor->area.top = WINPR_ASSERTING_INT_CAST(uint16_t, screenInfo[i].y_org);
+				monitor->area.right = WINPR_ASSERTING_INT_CAST(
+				    uint16_t, screenInfo[i].x_org + screenInfo[i].width - 1);
+				monitor->area.bottom = WINPR_ASSERTING_INT_CAST(
+				    uint16_t, screenInfo[i].y_org + screenInfo[i].height - 1);
 			}
 		}
 
@@ -241,9 +250,7 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 	/* Determine which monitor that the mouse cursor is on */
 	if (vscreen->monitors)
 	{
-		int i;
-
-		for (i = 0; i < vscreen->nmonitors; i++)
+		for (UINT32 i = 0; i < vscreen->nmonitors; i++)
 		{
 			const MONITOR_INFO* monitor = &vscreen->monitors[i];
 
@@ -315,15 +322,15 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 		{
 			xfc->workArea.x = 0;
 			xfc->workArea.y = 0;
-			xfc->workArea.width = WidthOfScreen(xfc->screen);
-			xfc->workArea.height = HeightOfScreen(xfc->screen);
+			xfc->workArea.width = WINPR_ASSERTING_INT_CAST(uint32_t, WidthOfScreen(xfc->screen));
+			xfc->workArea.height = WINPR_ASSERTING_INT_CAST(uint32_t, HeightOfScreen(xfc->screen));
 		}
 	}
 
 	if (freerdp_settings_get_bool(settings, FreeRDP_Fullscreen))
 	{
-		*pMaxWidth = WidthOfScreen(xfc->screen);
-		*pMaxHeight = HeightOfScreen(xfc->screen);
+		*pMaxWidth = WINPR_ASSERTING_INT_CAST(uint32_t, WidthOfScreen(xfc->screen));
+		*pMaxHeight = WINPR_ASSERTING_INT_CAST(uint32_t, HeightOfScreen(xfc->screen));
 	}
 	else if (freerdp_settings_get_bool(settings, FreeRDP_Workarea))
 	{
@@ -340,20 +347,19 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 			if (!vscreen->monitors)
 				goto fail;
 
-			*pMaxWidth = vscreen->monitors[current_monitor].area.right -
-			             vscreen->monitors[current_monitor].area.left + 1;
-			*pMaxHeight = vscreen->monitors[current_monitor].area.bottom -
-			              vscreen->monitors[current_monitor].area.top + 1;
+			const MONITOR_INFO* vmonitor = &vscreen->monitors[current_monitor];
+			const RECTANGLE_16* area = &vmonitor->area;
+
+			*pMaxWidth = area->right - area->left + 1;
+			*pMaxHeight = area->bottom - area->top + 1;
 
 			if (freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth))
-				*pMaxWidth = ((vscreen->monitors[current_monitor].area.right -
-				               vscreen->monitors[current_monitor].area.left + 1) *
+				*pMaxWidth = ((area->right - area->left + 1) *
 				              freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)) /
 				             100;
 
 			if (freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseHeight))
-				*pMaxHeight = ((vscreen->monitors[current_monitor].area.bottom -
-				                vscreen->monitors[current_monitor].area.top + 1) *
+				*pMaxHeight = ((area->bottom - area->top + 1) *
 				               freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)) /
 				              100;
 		}
@@ -382,6 +388,7 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 
 	/* Create array of all active monitors by taking into account monitors requested on the
 	 * command-line */
+	int nmonitors = 0;
 	{
 		UINT32 nr = 0;
 
@@ -392,59 +399,70 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 		}
 		for (UINT32 i = 0; i < vscreen->nmonitors; i++)
 		{
-			MONITOR_ATTRIBUTES* attrs;
+			MONITOR_ATTRIBUTES* attrs = NULL;
 
-			if (!xf_is_monitor_id_active(xfc, (UINT32)i))
+			if (!xf_is_monitor_id_active(xfc, i))
 				continue;
 
 			if (!vscreen->monitors)
 				goto fail;
 
 			rdpMonitor* monitor = freerdp_settings_get_pointer_array_writable(
-			    settings, FreeRDP_MonitorDefArray, nmonitors);
-			monitor->x = (vscreen->monitors[i].area.left *
-			              (freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth)
-			                   ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
-			                   : 100)) /
-			             100;
-			monitor->y = (vscreen->monitors[i].area.top *
-			              (freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseHeight)
-			                   ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
-			                   : 100)) /
-			             100;
+			    settings, FreeRDP_MonitorDefArray, WINPR_ASSERTING_INT_CAST(size_t, nmonitors));
+			monitor->x =
+			    WINPR_ASSERTING_INT_CAST(
+			        int32_t, vscreen->monitors[i].area.left*(
+			                     freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth)
+			                         ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
+			                         : 100)) /
+			    100;
+			monitor->y =
+			    WINPR_ASSERTING_INT_CAST(
+			        int32_t, vscreen->monitors[i].area.top*(
+			                     freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseHeight)
+			                         ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
+			                         : 100)) /
+			    100;
 			monitor->width =
-			    ((vscreen->monitors[i].area.right - vscreen->monitors[i].area.left + 1) *
-			     (freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth)
-			          ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
-			          : 100)) /
+			    WINPR_ASSERTING_INT_CAST(
+			        int32_t,
+			        (vscreen->monitors[i].area.right - vscreen->monitors[i].area.left + 1) *
+			            (freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth)
+			                 ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
+			                 : 100)) /
 			    100;
 			monitor->height =
-			    ((vscreen->monitors[i].area.bottom - vscreen->monitors[i].area.top + 1) *
-			     (freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth)
-			          ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
-			          : 100)) /
+			    WINPR_ASSERTING_INT_CAST(
+			        int32_t,
+			        (vscreen->monitors[i].area.bottom - vscreen->monitors[i].area.top + 1) *
+			            (freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth)
+			                 ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
+			                 : 100)) /
 			    100;
 			monitor->orig_screen = i;
 #ifdef USABLE_XRANDR
 
 			if (useXRandr && rrmonitors)
 			{
-				Rotation rot, ret;
+				Rotation rot = 0;
+				Rotation ret = 0;
 				attrs = &monitor->attributes;
-				attrs->physicalWidth = rrmonitors[i].mwidth;
-				attrs->physicalHeight = rrmonitors[i].mheight;
-				ret = XRRRotations(xfc->display, i, &rot);
+				attrs->physicalWidth = WINPR_ASSERTING_INT_CAST(uint32_t, rrmonitors[i].mwidth);
+				attrs->physicalHeight = WINPR_ASSERTING_INT_CAST(uint32_t, rrmonitors[i].mheight);
+				ret = XRRRotations(xfc->display, WINPR_ASSERTING_INT_CAST(int, i), &rot);
 				attrs->orientation = ret;
 			}
 
 #endif
 
-			if ((UINT32)i == nr)
+			if (i == nr)
 			{
 				monitor->is_primary = TRUE;
-				if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftX, monitor->x))
+				if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftX,
+				                                 WINPR_ASSERTING_INT_CAST(uint32_t, monitor->x)))
 					goto fail;
-				if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftY, monitor->y))
+				if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftY,
+				                                 WINPR_ASSERTING_INT_CAST(uint32_t, monitor->y)))
 					goto fail;
 				primaryMonitorFound = TRUE;
 			}
@@ -457,29 +475,34 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 	 * to go fullscreen on the current monitor only */
 	if (nmonitors == 0 && vscreen->nmonitors > 0)
 	{
-		INT32 width, height;
 		if (!vscreen->monitors)
 			goto fail;
 
-		width = vscreen->monitors[current_monitor].area.right -
-		        vscreen->monitors[current_monitor].area.left + 1L;
-		height = vscreen->monitors[current_monitor].area.bottom -
-		         vscreen->monitors[current_monitor].area.top + 1L;
+		const MONITOR_INFO* vmonitor = &vscreen->monitors[current_monitor];
+		const RECTANGLE_16* area = &vmonitor->area;
+
+		const INT32 width = area->right - area->left + 1;
+		const INT32 height = area->bottom - area->top + 1;
+		const INT32 maxw =
+		    ((width < 0) || ((UINT32)width < *pMaxWidth)) ? width : (INT32)*pMaxWidth;
+		const INT32 maxh =
+		    ((height < 0) || ((UINT32)height < *pMaxHeight)) ? width : (INT32)*pMaxHeight;
 
 		rdpMonitor* monitor =
 		    freerdp_settings_get_pointer_array_writable(settings, FreeRDP_MonitorDefArray, 0);
 		if (!monitor)
 			goto fail;
 
-		monitor->x = vscreen->monitors[current_monitor].area.left;
-		monitor->y = vscreen->monitors[current_monitor].area.top;
-		monitor->width = MIN(width, (INT64)(*pMaxWidth));
-		monitor->height = MIN(height, (INT64)(*pMaxHeight));
+		monitor->x = area->left;
+		monitor->y = area->top;
+		monitor->width = maxw;
+		monitor->height = maxh;
 		monitor->orig_screen = current_monitor;
 		nmonitors = 1;
 	}
 
-	if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount, nmonitors))
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount,
+	                                 WINPR_ASSERTING_INT_CAST(uint32_t, nmonitors)))
 		goto fail;
 
 	/* If we have specific monitor information */
@@ -524,33 +547,31 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 			if (vB != destB)
 				xfc->fullscreenMonitors.bottom = monitor->orig_screen;
 
-			vX = destX / ((freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth)
-			                   ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
-			                   : 100) /
-			              100.);
-			vY = destY / ((freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseHeight)
-			                   ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
-			                   : 100) /
-			              100.);
-			vR = destR / ((freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth)
-			                   ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
-			                   : 100) /
-			              100.);
-			vB = destB / ((freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseHeight)
-			                   ? freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen)
-			                   : 100) /
-			              100.);
+			const UINT32 ps = freerdp_settings_get_uint32(settings, FreeRDP_PercentScreen);
+			WINPR_ASSERT(ps <= 100);
+
+			const int psuw =
+			    freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseWidth) ? (int)ps : 100;
+			const int psuh =
+			    freerdp_settings_get_bool(settings, FreeRDP_PercentScreenUseHeight) ? (int)ps : 100;
+			vX = (destX * psuw) / 100;
+			vY = (destY * psuh) / 100;
+			vR = (destR * psuw) / 100;
+			vB = (destB * psuh) / 100;
 		}
 
 		vscreen->area.left = 0;
-		vscreen->area.right = vR - vX - 1;
+		const int r = vR - vX - 1;
+		vscreen->area.right = WINPR_ASSERTING_INT_CAST(UINT16, r);
 		vscreen->area.top = 0;
-		vscreen->area.bottom = vB - vY - 1;
+		const int b = vB - vY - 1;
+		vscreen->area.bottom = WINPR_ASSERTING_INT_CAST(UINT16, b);
 
 		if (freerdp_settings_get_bool(settings, FreeRDP_Workarea))
 		{
-			vscreen->area.top = xfc->workArea.y;
-			vscreen->area.bottom = xfc->workArea.height + xfc->workArea.y - 1;
+			vscreen->area.top = WINPR_ASSERTING_INT_CAST(UINT16, xfc->workArea.y);
+			vscreen->area.bottom =
+			    WINPR_ASSERTING_INT_CAST(UINT16, xfc->workArea.height + xfc->workArea.y - 1);
 		}
 
 		if (!primaryMonitorFound)
@@ -571,7 +592,7 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 				   The monitor listed with /list:monitor on index zero is always the primary
 				*/
 				screen = DefaultScreenOfDisplay(xfc->display);
-				monitor_index = XScreenNumberOfScreen(screen);
+				monitor_index = WINPR_ASSERTING_INT_CAST(uint32_t, XScreenNumberOfScreen(screen));
 			}
 
 			UINT32 j = monitor_index;
@@ -582,9 +603,11 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 			if ((pmonitor->x != 0) || (pmonitor->y != 0))
 			{
 				pmonitor->is_primary = TRUE;
-				if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftX, pmonitor->x))
+				if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftX,
+				                                 WINPR_ASSERTING_INT_CAST(uint32_t, pmonitor->x)))
 					goto fail;
-				if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftY, pmonitor->y))
+				if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftY,
+				                                 WINPR_ASSERTING_INT_CAST(uint32_t, pmonitor->y)))
 					goto fail;
 			}
 			else
@@ -599,11 +622,13 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 					if (!primaryMonitorFound && monitor->x == 0 && monitor->y == 0)
 					{
 						monitor->is_primary = TRUE;
-						if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftX,
-						                                 monitor->x))
+						if (!freerdp_settings_set_uint32(
+						        settings, FreeRDP_MonitorLocalShiftX,
+						        WINPR_ASSERTING_INT_CAST(uint32_t, monitor->x)))
 							goto fail;
-						if (!freerdp_settings_set_uint32(settings, FreeRDP_MonitorLocalShiftY,
-						                                 monitor->y))
+						if (!freerdp_settings_set_uint32(
+						        settings, FreeRDP_MonitorLocalShiftY,
+						        WINPR_ASSERTING_INT_CAST(uint32_t, monitor->y)))
 							goto fail;
 						primaryMonitorFound = TRUE;
 					}
@@ -623,9 +648,13 @@ BOOL xf_detect_monitors(xfContext* xfc, UINT32* pMaxWidth, UINT32* pMaxHeight)
 			rdpMonitor* monitor =
 			    freerdp_settings_get_pointer_array_writable(settings, FreeRDP_MonitorDefArray, i);
 			monitor->x =
-			    monitor->x - freerdp_settings_get_uint32(settings, FreeRDP_MonitorLocalShiftX);
+			    monitor->x -
+			    WINPR_ASSERTING_INT_CAST(
+			        int32_t, freerdp_settings_get_uint32(settings, FreeRDP_MonitorLocalShiftX));
 			monitor->y =
-			    monitor->y - freerdp_settings_get_uint32(settings, FreeRDP_MonitorLocalShiftY);
+			    monitor->y -
+			    WINPR_ASSERTING_INT_CAST(
+			        int32_t, freerdp_settings_get_uint32(settings, FreeRDP_MonitorLocalShiftY));
 		}
 
 		/* Set the desktop width and height according to the bounding rectangle around the active

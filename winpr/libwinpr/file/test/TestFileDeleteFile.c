@@ -8,14 +8,14 @@
 int TestFileDeleteFile(int argc, char* argv[])
 {
 	BOOL rc = FALSE;
-	int fd;
+	int fd = 0;
 	char validA[] = "/tmp/valid-test-file-XXXXXX";
 	char validW[] = "/tmp/valid-test-file-XXXXXX";
 	WCHAR* validWW = NULL;
 	const char invalidA[] = "/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
 	WCHAR invalidW[sizeof(invalidA)] = { 0 };
 
-	ConvertUtf8NToWChar(invalidA, ARRAYSIZE(invalidA), invalidW, ARRAYSIZE(invalidW));
+	(void)ConvertUtf8NToWChar(invalidA, ARRAYSIZE(invalidA), invalidW, ARRAYSIZE(invalidW));
 
 	WINPR_UNUSED(argc);
 	WINPR_UNUSED(argv);

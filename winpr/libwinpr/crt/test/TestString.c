@@ -1,6 +1,7 @@
 
 #include <stdio.h>
 #include <winpr/crt.h>
+#include <winpr/string.h>
 #include <winpr/windows.h>
 
 static const CHAR testStringA[] = { 'T', 'h', 'e', ' ', 'q', 'u', 'i', 'c', 'k', ' ', 'b',
@@ -78,22 +79,51 @@ static BOOL test_url_escape(void)
 	return TRUE;
 }
 
+static BOOL test_winpr_asprintf(void)
+{
+	BOOL rc = FALSE;
+	const char test[] = "test string case";
+	const size_t len = strnlen(test, sizeof(test));
+
+	char* str = NULL;
+	size_t slen = 0;
+	const int res = winpr_asprintf(&str, &slen, "%s", test);
+	if (!str)
+		goto fail;
+	if (res < 0)
+		goto fail;
+	if ((size_t)res != len)
+		goto fail;
+	if (len != slen)
+		goto fail;
+	if (strnlen(str, slen + 10) != slen)
+		goto fail;
+	rc = TRUE;
+fail:
+	free(str);
+	return rc;
+}
+
 int TestString(int argc, char* argv[])
 {
-	const WCHAR* p;
-	size_t pos;
-	size_t length;
-	WCHAR* context;
+	const WCHAR* p = NULL;
+	size_t pos = 0;
+	size_t length = 0;
+	WCHAR* context = NULL;
 
 	WINPR_UNUSED(argc);
 	WINPR_UNUSED(argv);
+
+	if (!test_winpr_asprintf())
+		return -1;
 
 	if (!test_url_escape())
 		return -1;
 
 	/* _wcslen */
 	WCHAR testStringW[ARRAYSIZE(testStringA)] = { 0 };
-	ConvertUtf8NToWChar(testStringA, ARRAYSIZE(testStringA), testStringW, ARRAYSIZE(testStringW));
+	(void)ConvertUtf8NToWChar(testStringA, ARRAYSIZE(testStringA), testStringW,
+	                          ARRAYSIZE(testStringW));
 	const size_t testStringW_Length = testStringA_Length;
 	length = _wcslen(testStringW);
 
@@ -143,13 +173,15 @@ int TestString(int argc, char* argv[])
 	/* wcstok_s */
 	WCHAR testDelimiterW[ARRAYSIZE(testDelimiterA)] = { 0 };
 	WCHAR testTokensW[ARRAYSIZE(testTokensA)] = { 0 };
-	ConvertUtf8NToWChar(testTokensA, ARRAYSIZE(testTokensA), testTokensW, ARRAYSIZE(testTokensW));
-	ConvertUtf8NToWChar(testDelimiterA, ARRAYSIZE(testDelimiterA), testDelimiterW,
-	                    ARRAYSIZE(testDelimiterW));
+	(void)ConvertUtf8NToWChar(testTokensA, ARRAYSIZE(testTokensA), testTokensW,
+	                          ARRAYSIZE(testTokensW));
+	(void)ConvertUtf8NToWChar(testDelimiterA, ARRAYSIZE(testDelimiterA), testDelimiterW,
+	                          ARRAYSIZE(testDelimiterW));
 	p = wcstok_s(testTokensW, testDelimiterW, &context);
 
 	WCHAR testToken1W[ARRAYSIZE(testToken1A)] = { 0 };
-	ConvertUtf8NToWChar(testToken1A, ARRAYSIZE(testToken1A), testToken1W, ARRAYSIZE(testToken1W));
+	(void)ConvertUtf8NToWChar(testToken1A, ARRAYSIZE(testToken1A), testToken1W,
+	                          ARRAYSIZE(testToken1W));
 	if (memcmp(p, testToken1W, sizeof(testToken1W)) != 0)
 	{
 		printf("wcstok_s error: token #1 mismatch\n");
@@ -159,7 +191,8 @@ int TestString(int argc, char* argv[])
 	p = wcstok_s(NULL, testDelimiterW, &context);
 
 	WCHAR testToken2W[ARRAYSIZE(testToken2A)] = { 0 };
-	ConvertUtf8NToWChar(testToken2A, ARRAYSIZE(testToken2A), testToken2W, ARRAYSIZE(testToken2W));
+	(void)ConvertUtf8NToWChar(testToken2A, ARRAYSIZE(testToken2A), testToken2W,
+	                          ARRAYSIZE(testToken2W));
 	if (memcmp(p, testToken2W, sizeof(testToken2W)) != 0)
 	{
 		printf("wcstok_s error: token #2 mismatch\n");
@@ -169,7 +202,8 @@ int TestString(int argc, char* argv[])
 	p = wcstok_s(NULL, testDelimiterW, &context);
 
 	WCHAR testToken3W[ARRAYSIZE(testToken3A)] = { 0 };
-	ConvertUtf8NToWChar(testToken3A, ARRAYSIZE(testToken3A), testToken3W, ARRAYSIZE(testToken3W));
+	(void)ConvertUtf8NToWChar(testToken3A, ARRAYSIZE(testToken3A), testToken3W,
+	                          ARRAYSIZE(testToken3W));
 	if (memcmp(p, testToken3W, sizeof(testToken3W)) != 0)
 	{
 		printf("wcstok_s error: token #3 mismatch\n");

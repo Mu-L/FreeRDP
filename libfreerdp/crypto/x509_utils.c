@@ -39,7 +39,7 @@
 BYTE* x509_utils_get_hash(const X509* xcert, const char* hash, size_t* length)
 {
 	UINT32 fp_len = EVP_MAX_MD_SIZE;
-	BYTE* fp;
+	BYTE* fp = NULL;
 	const EVP_MD* md = EVP_get_digestbyname(hash);
 	if (!md)
 	{
@@ -48,7 +48,7 @@ BYTE* x509_utils_get_hash(const X509* xcert, const char* hash, size_t* length)
 	}
 	if (!xcert || !length)
 	{
-		WLog_ERR(TAG, "Invalid arugments: xcert=%p, length=%p", xcert, length);
+		WLog_ERR(TAG, "Invalid arguments: xcert=%p, length=%p", xcert, length);
 		return NULL;
 	}
 
@@ -79,23 +79,30 @@ static char* crypto_print_name(const X509_NAME* name)
 	{
 		UINT64 size = BIO_number_written(outBIO);
 		if (size > INT_MAX)
-			return NULL;
+			goto fail;
 		buffer = calloc(1, (size_t)size + 1);
 
 		if (!buffer)
-			return NULL;
+			goto fail;
 
 		ERR_clear_error();
-		BIO_read(outBIO, buffer, (int)size);
+		const int rc = BIO_read(outBIO, buffer, (int)size);
+		if (rc <= 0)
+		{
+			free(buffer);
+			buffer = NULL;
+			goto fail;
+		}
 	}
 
+fail:
 	BIO_free_all(outBIO);
 	return buffer;
 }
 
 char* x509_utils_get_subject(const X509* xcert)
 {
-	char* subject;
+	char* subject = NULL;
 	if (!xcert)
 	{
 		WLog_ERR(TAG, "Invalid certificate %p", xcert);
@@ -122,8 +129,8 @@ static const char* general_name_type_label(int general_name_type)
 	}
 	else
 	{
-		static char buffer[80];
-		sprintf(buffer, "Unknown general name type (%d)", general_name_type);
+		static char buffer[80] = { 0 };
+		(void)snprintf(buffer, sizeof(buffer), "Unknown general name type (%d)", general_name_type);
 		return buffer;
 	}
 }
@@ -178,9 +185,8 @@ typedef int (*general_name_mapper_pr)(GENERAL_NAME* name, void* data, int index,
 static void map_subject_alt_name(const X509* x509, int general_name_type,
                                  general_name_mapper_pr mapper, void* data)
 {
-	int i;
-	int num;
-	STACK_OF(GENERAL_NAME) * gens;
+	int num = 0;
+	STACK_OF(GENERAL_NAME)* gens = NULL;
 	gens = X509_get_ext_d2i(x509, NID_subject_alt_name, NULL, NULL);
 
 	if (!gens)
@@ -190,7 +196,7 @@ static void map_subject_alt_name(const X509* x509, int general_name_type,
 
 	num = sk_GENERAL_NAME_num(gens);
 
-	for (i = 0; (i < num); i++)
+	for (int i = 0; (i < num); i++)
 	{
 		GENERAL_NAME* name = sk_GENERAL_NAME_value(gens, i);
 
@@ -231,9 +237,9 @@ that must be freed with OPENSSL_free.
 typedef struct string_list
 {
 	char** strings;
-	int allocated;
-	int count;
-	int maximum;
+	size_t allocated;
+	size_t count;
+	size_t maximum;
 } string_list;
 
 static void string_list_initialize(string_list* list)
@@ -244,12 +250,12 @@ static void string_list_initialize(string_list* list)
 	list->maximum = INT_MAX;
 }
 
-static void string_list_allocate(string_list* list, int allocate_count)
+static void string_list_allocate(string_list* list, size_t allocate_count)
 {
 	if (!list->strings && list->allocated == 0)
 	{
-		list->strings = calloc((size_t)allocate_count, sizeof(char*));
-		list->allocated = list->strings ? allocate_count : -1;
+		list->strings = (char**)calloc(allocate_count, sizeof(char*));
+		list->allocated = list->strings ? allocate_count : 0;
 		list->count = 0;
 	}
 }
@@ -259,14 +265,16 @@ static void string_list_free(string_list* list)
 	/* Note: we don't free the contents of the strings array: this */
 	/* is handled by the caller,  either by returning this */
 	/* content,  or freeing it itself. */
-	free(list->strings);
+	free((void*)list->strings);
 }
 
 static int extract_string(GENERAL_NAME* name, void* data, int index, int count)
 {
 	string_list* list = data;
 	unsigned char* cstring = 0;
-	ASN1_STRING* str;
+	ASN1_STRING* str = NULL;
+
+	WINPR_UNUSED(index);
 
 	switch (name->type)
 	{
@@ -293,7 +301,7 @@ static int extract_string(GENERAL_NAME* name, void* data, int index, int count)
 		return 1;
 	}
 
-	string_list_allocate(list, count);
+	string_list_allocate(list, WINPR_ASSERTING_INT_CAST(WINPR_CIPHER_TYPE, count));
 
 	if (list->allocated <= 0)
 	{
@@ -334,9 +342,9 @@ typedef struct object_list
 {
 	ASN1_OBJECT* type_id;
 	char** strings;
-	int allocated;
-	int count;
-	int maximum;
+	size_t allocated;
+	size_t count;
+	size_t maximum;
 } object_list;
 
 static void object_list_initialize(object_list* list)
@@ -348,42 +356,47 @@ static void object_list_initialize(object_list* list)
 	list->maximum = INT_MAX;
 }
 
-static void object_list_allocate(object_list* list, int allocate_count)
+static void object_list_allocate(object_list* list, size_t allocate_count)
 {
-	if (!list->strings && list->allocated == 0)
+	if (!list->strings && (list->allocated == 0) && (allocate_count > 0))
 	{
-		list->strings = calloc(allocate_count, sizeof(list->strings[0]));
-		list->allocated = list->strings ? allocate_count : -1;
+		list->strings = (char**)calloc(allocate_count, sizeof(list->strings[0]));
+		list->allocated = list->strings ? allocate_count : 0;
 		list->count = 0;
 	}
 }
 
 static char* object_string(ASN1_TYPE* object)
 {
-	char* result;
-	unsigned char* utf8String;
-	int length;
+	char* result = NULL;
+	unsigned char* utf8String = NULL;
+
 	/* TODO: check that object.type is a string type. */
-	length = ASN1_STRING_to_UTF8(&utf8String, object->value.asn1_string);
+	const int length = ASN1_STRING_to_UTF8(&utf8String, object->value.asn1_string);
 
 	if (length < 0)
 	{
 		return 0;
 	}
 
-	result = (char*)_strdup((char*)utf8String);
+	result = strndup((char*)utf8String, WINPR_ASSERTING_INT_CAST(size_t, length));
 	OPENSSL_free(utf8String);
 	return result;
 }
 
 static void object_list_free(object_list* list)
 {
-	free(list->strings);
+	WINPR_ASSERT(list);
+	free((void*)list->strings);
 }
 
 static int extract_othername_object_as_string(GENERAL_NAME* name, void* data, int index, int count)
 {
 	object_list* list = data;
+	WINPR_UNUSED(index);
+
+	if (count < 0)
+		return -1;
 
 	if (name->type != GEN_OTHERNAME)
 	{
@@ -395,7 +408,7 @@ static int extract_othername_object_as_string(GENERAL_NAME* name, void* data, in
 		return 1;
 	}
 
-	object_list_allocate(list, count);
+	object_list_allocate(list, WINPR_ASSERTING_INT_CAST(size_t, count));
 
 	if (list->allocated <= 0)
 	{
@@ -440,7 +453,7 @@ char* x509_utils_get_email(const X509* x509)
 char* x509_utils_get_upn(const X509* x509)
 {
 	char* result = 0;
-	object_list list;
+	object_list list = { 0 };
 	object_list_initialize(&list);
 	list.type_id = OBJ_nid2obj(NID_ms_upn);
 	list.maximum = 1;
@@ -457,6 +470,33 @@ char* x509_utils_get_upn(const X509* x509)
 	return result;
 }
 
+char* x509_utils_get_date(const X509* x509, BOOL startDate)
+{
+	WINPR_ASSERT(x509);
+
+	const ASN1_TIME* date = startDate ? X509_get0_notBefore(x509) : X509_get0_notAfter(x509);
+	if (!date)
+		return NULL;
+
+	BIO* bmem = BIO_new(BIO_s_mem());
+	if (!bmem)
+		return NULL;
+
+	char* str = NULL;
+	if (ASN1_TIME_print(bmem, date))
+	{
+		BUF_MEM* bptr = NULL;
+
+		BIO_get_mem_ptr(bmem, &bptr);
+		str = strndup(bptr->data, bptr->length);
+	}
+	else
+	{ // Log error
+	}
+	BIO_free_all(bmem);
+	return str;
+}
+
 void x509_utils_dns_names_free(size_t count, size_t* lengths, char** dns_names)
 {
 	free(lengths);
@@ -471,19 +511,19 @@ void x509_utils_dns_names_free(size_t count, size_t* lengths, char** dns_names)
 			}
 		}
 
-		free(dns_names);
+		free((void*)dns_names);
 	}
 }
 
 char** x509_utils_get_dns_names(const X509* x509, size_t* count, size_t** lengths)
 {
 	char** result = 0;
-	string_list list;
+	string_list list = { 0 };
 	string_list_initialize(&list);
 	map_subject_alt_name(x509, GEN_DNS, extract_string, &list);
 	(*count) = list.count;
 
-	if (list.count == 0)
+	if (list.count <= 0)
 	{
 		string_list_free(&list);
 		return NULL;
@@ -491,20 +531,20 @@ char** x509_utils_get_dns_names(const X509* x509, size_t* count, size_t** length
 
 	/* lengths are not useful,  since we converted the
 	   strings to utf-8,  there cannot be nul-bytes in them. */
-	result = calloc(list.count, sizeof(*result));
+	result = (char**)calloc(list.count, sizeof(*result));
 	(*lengths) = calloc(list.count, sizeof(**lengths));
 
 	if (!result || !(*lengths))
 	{
 		string_list_free(&list);
-		free(result);
+		free((void*)result);
 		free(*lengths);
 		(*lengths) = 0;
 		(*count) = 0;
 		return NULL;
 	}
 
-	for (int i = 0; i < list.count; i++)
+	for (size_t i = 0; i < list.count; i++)
 	{
 		result[i] = list.strings[i];
 		(*lengths)[i] = strlen(result[i]);
@@ -516,7 +556,7 @@ char** x509_utils_get_dns_names(const X509* x509, size_t* count, size_t** length
 
 char* x509_utils_get_issuer(const X509* xcert)
 {
-	char* issuer;
+	char* issuer = NULL;
 	if (!xcert)
 	{
 		WLog_ERR(TAG, "Invalid certificate %p", xcert);
@@ -531,8 +571,8 @@ char* x509_utils_get_issuer(const X509* xcert)
 BOOL x509_utils_check_eku(const X509* xcert, int nid)
 {
 	BOOL ret = FALSE;
-	STACK_OF(ASN1_OBJECT) * oid_stack;
-	ASN1_OBJECT* oid;
+	STACK_OF(ASN1_OBJECT)* oid_stack = NULL;
+	ASN1_OBJECT* oid = NULL;
 
 	if (!xcert)
 		return FALSE;
@@ -554,9 +594,9 @@ BOOL x509_utils_check_eku(const X509* xcert, int nid)
 
 void x509_utils_print_info(const X509* xcert)
 {
-	char* fp;
-	char* issuer;
-	char* subject;
+	char* fp = NULL;
+	char* issuer = NULL;
+	char* subject = NULL;
 	subject = x509_utils_get_subject(xcert);
 	issuer = x509_utils_get_issuer(xcert);
 	fp = (char*)x509_utils_get_hash(xcert, "sha256", NULL);
@@ -581,126 +621,19 @@ out_free_issuer:
 	free(subject);
 }
 
-static BYTE* x509_utils_get_pem(const X509* xcert, const STACK_OF(X509) * chain, size_t* plength)
-{
-	BIO* bio;
-	int status, count, x;
-	size_t offset;
-	size_t length = 0;
-	BOOL rc = FALSE;
-	BYTE* pemCert = NULL;
-
-	if (!xcert || !plength)
-		return NULL;
-
-	/**
-	 * Don't manage certificates internally, leave it up entirely to the external client
-	 * implementation
-	 */
-	bio = BIO_new(BIO_s_mem());
-
-	if (!bio)
-	{
-		WLog_ERR(TAG, "BIO_new() failure");
-		return NULL;
-	}
-
-	status = PEM_write_bio_X509(bio, (X509*)xcert);
-
-	if (status < 0)
-	{
-		WLog_ERR(TAG, "PEM_write_bio_X509 failure: %d", status);
-		goto fail;
-	}
-
-	if (chain)
-	{
-		count = sk_X509_num(chain);
-		for (x = 0; x < count; x++)
-		{
-			X509* c = sk_X509_value(chain, x);
-			status = PEM_write_bio_X509(bio, c);
-			if (status < 0)
-			{
-				WLog_ERR(TAG, "PEM_write_bio_X509 failure: %d", status);
-				goto fail;
-			}
-		}
-	}
-
-	offset = 0;
-	length = 2048;
-	pemCert = (BYTE*)malloc(length + 1);
-
-	if (!pemCert)
-	{
-		WLog_ERR(TAG, "error allocating pemCert");
-		goto fail;
-	}
-
-	ERR_clear_error();
-	status = BIO_read(bio, pemCert, length);
-
-	if (status < 0)
-	{
-		WLog_ERR(TAG, "failed to read certificate");
-		goto fail;
-	}
-
-	offset += (size_t)status;
-
-	while (offset >= length)
-	{
-		int new_len;
-		BYTE* new_cert;
-		new_len = length * 2;
-		new_cert = (BYTE*)realloc(pemCert, new_len + 1);
-
-		if (!new_cert)
-			goto fail;
-
-		length = new_len;
-		pemCert = new_cert;
-		ERR_clear_error();
-		status = BIO_read(bio, &pemCert[offset], length - offset);
-
-		if (status < 0)
-			break;
-
-		offset += status;
-	}
-
-	if (status < 0)
-	{
-		WLog_ERR(TAG, "failed to read certificate");
-		goto fail;
-	}
-
-	length = offset;
-	pemCert[length] = '\0';
-	*plength = length;
-	rc = TRUE;
-fail:
-
-	if (!rc)
-	{
-		WLog_ERR(TAG, "Failed to extract PEM from certificate %p", xcert);
-		free(pemCert);
-		pemCert = NULL;
-	}
-
-	BIO_free_all(bio);
-	return pemCert;
-}
-
 X509* x509_utils_from_pem(const char* data, size_t len, BOOL fromFile)
 {
 	X509* x509 = NULL;
-	BIO* bio;
+	BIO* bio = NULL;
 	if (fromFile)
 		bio = BIO_new_file(data, "rb");
 	else
-		bio = BIO_new_mem_buf(data, len);
+	{
+		if (len > INT_MAX)
+			return NULL;
+
+		bio = BIO_new_mem_buf(data, (int)len);
+	}
 
 	if (!bio)
 	{
@@ -761,11 +694,12 @@ static WINPR_MD_TYPE hash_nid_to_winpr(int hash_nid)
 static WINPR_MD_TYPE get_rsa_pss_digest(const X509_ALGOR* alg)
 {
 	WINPR_MD_TYPE ret = WINPR_MD_NONE;
-	WINPR_MD_TYPE message_digest, mgf1_digest;
-	int param_type;
-	const void* param_value;
-	const ASN1_STRING* sequence;
-	const unsigned char* inp;
+	WINPR_MD_TYPE message_digest = WINPR_MD_NONE;
+	WINPR_MD_TYPE mgf1_digest = WINPR_MD_NONE;
+	int param_type = 0;
+	const void* param_value = NULL;
+	const ASN1_STRING* sequence = NULL;
+	const unsigned char* inp = NULL;
 	RSA_PSS_PARAMS* params = NULL;
 	X509_ALGOR* mgf1_digest_alg = NULL;
 
@@ -792,7 +726,7 @@ static WINPR_MD_TYPE get_rsa_pss_digest(const X509_ALGOR* alg)
 	message_digest = WINPR_MD_SHA1;
 	if (params->hashAlgorithm != NULL)
 	{
-		const ASN1_OBJECT* obj;
+		const ASN1_OBJECT* obj = NULL;
 		X509_ALGOR_get0(&obj, NULL, NULL, params->hashAlgorithm);
 		message_digest = hash_nid_to_winpr(OBJ_obj2nid(obj));
 		if (message_digest == WINPR_MD_NONE)
@@ -802,10 +736,10 @@ static WINPR_MD_TYPE get_rsa_pss_digest(const X509_ALGOR* alg)
 	mgf1_digest = WINPR_MD_SHA1;
 	if (params->maskGenAlgorithm != NULL)
 	{
-		const ASN1_OBJECT* obj;
-		int mgf_param_type;
-		const void* mgf_param_value;
-		const ASN1_STRING* mgf_param_sequence;
+		const ASN1_OBJECT* obj = NULL;
+		int mgf_param_type = 0;
+		const void* mgf_param_value = NULL;
+		const ASN1_STRING* mgf_param_sequence = NULL;
 		/* First, check this is MGF-1, the only one ever defined. */
 		X509_ALGOR_get0(&obj, &mgf_param_type, &mgf_param_value, params->maskGenAlgorithm);
 		if (OBJ_obj2nid(obj) != NID_mgf1)
@@ -848,7 +782,7 @@ WINPR_MD_TYPE x509_utils_get_signature_alg(const X509* xcert)
 
 	if (nid == NID_rsassaPss)
 	{
-		const X509_ALGOR* alg;
+		const X509_ALGOR* alg = NULL;
 		X509_get0_signature(NULL, &alg, xcert);
 		return get_rsa_pss_digest(alg);
 	}
@@ -953,7 +887,8 @@ BOOL x509_utils_verify(X509* xcert, STACK_OF(X509) * chain, const char* certific
 
 	for (size_t i = 0; i < ARRAYSIZE(purposes); i++)
 	{
-		int err = -1, rc = -1;
+		int err = -1;
+		int rc = -1;
 		int purpose = purposes[i];
 		csc = X509_STORE_CTX_new();
 

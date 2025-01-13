@@ -1,8 +1,8 @@
-/**
+/*
  * WinPR: Windows Portable Runtime
  * Image Utils
  *
- * Copyright 2024 Armin Novak <armin.novak@thincast.com>
+ * Copyright 2024 Armin Novak <anovak@thincast.com>
  * Copyright 2024 Thincast Technologies GmbH
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,28 +18,17 @@
  * limitations under the License.
  */
 
-#ifndef WINPR_UTILS_IMAGE_H
-#define WINPR_UTILS_IMAGE_H
+#ifndef LIBWINPR_UTILS_IMAGE_H
+#define LIBWINPR_UTILS_IMAGE_H
 
-#include <winpr/winpr.h>
 #include <winpr/wtypes.h>
+#include <winpr/stream.h>
+#include <winpr/image.h>
 
-WINPR_LOCAL void* winpr_convert_to_png(const void* data, size_t size, UINT32 width, UINT32 height,
-                                       UINT32 stride, UINT32 bpp, UINT32* pSize);
-WINPR_LOCAL SSIZE_T winpr_convert_from_png(const char* comp_data, size_t comp_data_bytes,
-                                           UINT32* width, UINT32* height, UINT32* bpp,
-                                           char** ppdecomp_data);
+BOOL readBitmapFileHeader(wStream* s, WINPR_BITMAP_FILE_HEADER* bf);
+BOOL writeBitmapFileHeader(wStream* s, const WINPR_BITMAP_FILE_HEADER* bf);
 
-WINPR_LOCAL void* winpr_convert_to_webp(const void* data, size_t size, UINT32 width, UINT32 height,
-                                        UINT32 stride, UINT32 bpp, UINT32* pSize);
-WINPR_LOCAL SSIZE_T winpr_convert_from_webp(const char* comp_data, size_t comp_data_bytes,
-                                            UINT32* width, UINT32* height, UINT32* bpp,
-                                            char** ppdecomp_data);
+BOOL readBitmapInfoHeader(wStream* s, WINPR_BITMAP_INFO_HEADER* bi, size_t* poffset);
+BOOL writeBitmapInfoHeader(wStream* s, const WINPR_BITMAP_INFO_HEADER* bi);
 
-WINPR_LOCAL void* winpr_convert_to_jpeg(const void* data, size_t size, UINT32 width, UINT32 height,
-                                        UINT32 stride, UINT32 bpp, UINT32* pSize);
-WINPR_LOCAL SSIZE_T winpr_convert_from_jpeg(const char* comp_data, size_t comp_data_bytes,
-                                            UINT32* width, UINT32* height, UINT32* bpp,
-                                            char** ppdecomp_data);
-
-#endif
+#endif /* LIBWINPR_UTILS_IMAGE_H */

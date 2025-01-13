@@ -37,10 +37,11 @@
 
 WINPR_PRAGMA_DIAG_PUSH
 WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
+WINPR_PRAGMA_DIAG_IGNORED_UNUSED_MACRO
 
 #ifdef WINPR_HAVE_UNISTD_H
 #ifndef _XOPEN_SOURCE
-#define _XOPEN_SOURCE 500
+#define _XOPEN_SOURCE 500 // NOLINT(bugprone-reserved-identifier,cert-dcl37-c,cert-dcl51-cpp)
 #endif
 #include <unistd.h>
 #endif
@@ -56,9 +57,9 @@ DWORD SleepEx(DWORD dwMilliseconds, BOOL bAlertable)
 {
 	WINPR_THREAD* thread = winpr_GetCurrentThread();
 	WINPR_POLL_SET pollset;
-	int status;
+	int status = 0;
 	DWORD ret = WAIT_FAILED;
-	BOOL autoSignalled;
+	BOOL autoSignalled = 0;
 
 	if (thread)
 	{
@@ -134,7 +135,7 @@ VOID USleep(DWORD dwMicroseconds)
 		QueryPerformanceFrequency(&freq);
 	}
 
-	// in order to save cpu cyles we use Sleep() for the large share ...
+	// in order to save cpu cycles we use Sleep() for the large share ...
 	if (dwMicroseconds >= 1000)
 	{
 		Sleep(dwMicroseconds / 1000);

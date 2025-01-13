@@ -18,6 +18,7 @@
  */
 
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 #include <winpr/print.h>
 
 #include <freerdp/config.h>
@@ -37,7 +38,7 @@
 
 BOOL per_read_length(wStream* s, UINT16* length)
 {
-	BYTE byte;
+	BYTE byte = 0;
 
 	WINPR_ASSERT(length);
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 1))
@@ -51,7 +52,7 @@ BOOL per_read_length(wStream* s, UINT16* length)
 			return FALSE;
 
 		byte &= ~(0x80);
-		*length = (byte << 8);
+		*length = WINPR_ASSERTING_INT_CAST(UINT16, byte << 8);
 		Stream_Read_UINT8(s, byte);
 		*length += byte;
 	}
@@ -234,7 +235,7 @@ BOOL per_write_padding(wStream* s, UINT16 length)
 
 BOOL per_read_integer(wStream* s, UINT32* integer)
 {
-	UINT16 length;
+	UINT16 length = 0;
 
 	WINPR_ASSERT(integer);
 
@@ -272,7 +273,7 @@ BOOL per_write_integer(wStream* s, UINT32 integer)
 			return FALSE;
 		if (!Stream_EnsureRemainingCapacity(s, 1))
 			return FALSE;
-		Stream_Write_UINT8(s, integer);
+		Stream_Write_UINT8(s, WINPR_ASSERTING_INT_CAST(UINT8, integer));
 	}
 	else if (integer <= UINT16_MAX)
 	{
@@ -280,7 +281,7 @@ BOOL per_write_integer(wStream* s, UINT32 integer)
 			return FALSE;
 		if (!Stream_EnsureRemainingCapacity(s, 2))
 			return FALSE;
-		Stream_Write_UINT16_BE(s, integer);
+		Stream_Write_UINT16_BE(s, WINPR_ASSERTING_INT_CAST(UINT16, integer));
 	}
 	else if (integer <= UINT32_MAX)
 	{
@@ -333,6 +334,8 @@ BOOL per_read_integer16(wStream* s, UINT16* integer, UINT16 min)
 
 BOOL per_write_integer16(wStream* s, UINT16 integer, UINT16 min)
 {
+	if (min > integer)
+		return FALSE;
 	if (!Stream_EnsureRemainingCapacity(s, 2))
 		return FALSE;
 	Stream_Write_UINT16_BE(s, integer - min);
@@ -415,8 +418,8 @@ static BOOL per_check_oid_and_log_mismatch(const BYTE* got, const BYTE* expect, 
 
 BOOL per_read_object_identifier(wStream* s, const BYTE oid[6])
 {
-	BYTE t12;
-	UINT16 length;
+	BYTE t12 = 0;
+	UINT16 length = 0;
 	BYTE a_oid[6] = { 0 };
 
 	if (!per_read_length(s, &length))
@@ -475,9 +478,7 @@ BOOL per_write_object_identifier(wStream* s, const BYTE oid[6])
 
 static void per_write_string(wStream* s, BYTE* str, int length)
 {
-	int i;
-
-	for (i = 0; i < length; i++)
+	for (int i = 0; i < length; i++)
 		Stream_Write_UINT8(s, str[i]);
 }
 
@@ -526,8 +527,7 @@ BOOL per_read_octet_string(wStream* s, const BYTE* oct_str, UINT16 length, UINT1
 
 BOOL per_write_octet_string(wStream* s, const BYTE* oct_str, UINT16 length, UINT16 min)
 {
-	UINT16 i;
-	UINT16 mlength;
+	UINT16 mlength = 0;
 
 	mlength = (length >= min) ? length - min : min;
 
@@ -536,7 +536,7 @@ BOOL per_write_octet_string(wStream* s, const BYTE* oct_str, UINT16 length, UINT
 
 	if (!Stream_EnsureRemainingCapacity(s, length))
 		return FALSE;
-	for (i = 0; i < length; i++)
+	for (UINT16 i = 0; i < length; i++)
 		Stream_Write_UINT8(s, oct_str[i]);
 	return TRUE;
 }
@@ -551,8 +551,8 @@ BOOL per_write_octet_string(wStream* s, const BYTE* oct_str, UINT16 length, UINT
 
 BOOL per_read_numeric_string(wStream* s, UINT16 min)
 {
-	size_t length;
-	UINT16 mlength;
+	size_t length = 0;
+	UINT16 mlength = 0;
 
 	if (!per_read_length(s, &mlength))
 		return FALSE;
@@ -578,25 +578,26 @@ BOOL per_read_numeric_string(wStream* s, UINT16 min)
 
 BOOL per_write_numeric_string(wStream* s, const BYTE* num_str, UINT16 length, UINT16 min)
 {
-	UINT16 i;
-	UINT16 mlength;
-	BYTE num, c1, c2;
+	WINPR_ASSERT(num_str || (length == 0));
 
-	mlength = (length >= min) ? length - min : min;
+	const UINT16 mlength = (length >= min) ? length - min : min;
 
 	if (!per_write_length(s, mlength))
 		return FALSE;
 
 	if (!Stream_EnsureRemainingCapacity(s, length))
 		return FALSE;
-	for (i = 0; i < length; i += 2)
+	for (UINT16 i = 0; i < length; i += 2)
 	{
-		c1 = num_str[i];
-		c2 = ((i + 1) < length) ? num_str[i + 1] : 0x30;
+		BYTE c1 = num_str[i];
+		BYTE c2 = ((i + 1) < length) ? num_str[i + 1] : 0x30;
+
+		if ((c1 < 0x30) || (c2 < 0x30))
+			return FALSE;
 
 		c1 = (c1 - 0x30) % 10;
 		c2 = (c2 - 0x30) % 10;
-		num = (c1 << 4) | c2;
+		const BYTE num = WINPR_ASSERTING_INT_CAST(BYTE, (c1 << 4) | c2);
 
 		Stream_Write_UINT8(s, num); /* string */
 	}

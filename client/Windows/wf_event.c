@@ -360,8 +360,9 @@ static void wf_send_resize(wfContext* wfc)
 				{
 					WLog_ERR("", "SendMonitorLayout failed.");
 				}
-				freerdp_settings_set_uint32(settings, FreeRDP_SmartSizingWidth, targetWidth);
-				freerdp_settings_set_uint32(settings, FreeRDP_SmartSizingHeight, targetHeight);
+				(void)freerdp_settings_set_uint32(settings, FreeRDP_SmartSizingWidth, targetWidth);
+				(void)freerdp_settings_set_uint32(settings, FreeRDP_SmartSizingHeight,
+				                                  targetHeight);
 			}
 			wfc->lastSentDate = GetTickCount64();
 		}
@@ -370,18 +371,15 @@ static void wf_send_resize(wfContext* wfc)
 
 LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam)
 {
-	HDC hdc;
-	LONG_PTR ptr;
-	wfContext* wfc;
-	int x, y, w, h;
-	PAINTSTRUCT ps;
-	BOOL processed;
-	RECT windowRect;
-	MINMAXINFO* minmax;
-	SCROLLINFO si;
+	HDC hdc = { 0 };
+	PAINTSTRUCT ps = { 0 };
+	BOOL processed = FALSE;
+	RECT windowRect = { 0 };
+	MINMAXINFO* minmax = NULL;
+	SCROLLINFO si = { 0 };
 	processed = TRUE;
-	ptr = GetWindowLongPtr(hWnd, GWLP_USERDATA);
-	wfc = (wfContext*)ptr;
+	LONG_PTR ptr = GetWindowLongPtr(hWnd, GWLP_USERDATA);
+	wfContext* wfc = (wfContext*)ptr;
 
 	if (wfc != NULL)
 	{
@@ -408,9 +406,8 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 				break;
 
 			case WM_GETMINMAXINFO:
-				if (freerdp_settings_get_bool(wfc->common.context.settings, FreeRDP_SmartSizing) ||
-				    (freerdp_settings_get_bool(wfc->common.context.settings,
-				                               FreeRDP_DynamicResolutionUpdate)))
+				if (freerdp_settings_get_bool(settings, FreeRDP_SmartSizing) ||
+				    (freerdp_settings_get_bool(settings, FreeRDP_DynamicResolutionUpdate)))
 				{
 					processed = FALSE;
 				}
@@ -494,16 +491,18 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 				return (LRESULT)1;
 
 			case WM_PAINT:
+			{
 				hdc = BeginPaint(hWnd, &ps);
-				x = ps.rcPaint.left;
-				y = ps.rcPaint.top;
-				w = ps.rcPaint.right - ps.rcPaint.left + 1;
-				h = ps.rcPaint.bottom - ps.rcPaint.top + 1;
+				const int x = ps.rcPaint.left;
+				const int y = ps.rcPaint.top;
+				const int w = ps.rcPaint.right - ps.rcPaint.left + 1;
+				const int h = ps.rcPaint.bottom - ps.rcPaint.top + 1;
 				wf_scale_blt(wfc, hdc, x, y, w, h, wfc->primary->hdc,
 				             x - wfc->offset_x + wfc->xCurrentScroll,
 				             y - wfc->offset_y + wfc->yCurrentScroll, SRCCOPY);
 				EndPaint(hWnd, &ps);
-				break;
+			}
+			break;
 #if (_WIN32_WINNT >= 0x0500)
 
 			case WM_XBUTTONDOWN:
@@ -725,10 +724,9 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 			{
 				if (wParam == SYSCOMMAND_ID_SMARTSIZING)
 				{
-					rdpSettings* settings = wfc->common.context.settings;
 					HMENU hMenu = GetSystemMenu(wfc->hwnd, FALSE);
 					const BOOL rc = freerdp_settings_get_bool(settings, FreeRDP_SmartSizing);
-					freerdp_settings_set_bool(settings, FreeRDP_SmartSizing, !rc);
+					(void)freerdp_settings_set_bool(settings, FreeRDP_SmartSizing, !rc);
 					CheckMenuItem(hMenu, SYSCOMMAND_ID_SMARTSIZING,
 					              freerdp_settings_get_bool(settings, FreeRDP_SmartSizing)
 					                  ? MF_CHECKED
@@ -781,7 +779,8 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 		case WM_SETFOCUS:
 			DEBUG_KBD("getting focus %X", hWnd);
 
-			freerdp_settings_set_bool(wfc->common.context.settings, FreeRDP_SuspendInput, FALSE);
+			(void)freerdp_settings_set_bool(wfc->common.context.settings, FreeRDP_SuspendInput,
+			                                FALSE);
 
 			if (alt_ctrl_down())
 				g_flipping_in = TRUE;
@@ -791,11 +790,12 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 			break;
 
 		case WM_KILLFOCUS:
-			freerdp_settings_set_bool(wfc->common.context.settings, FreeRDP_SuspendInput, TRUE);
+			(void)freerdp_settings_set_bool(wfc->common.context.settings, FreeRDP_SuspendInput,
+			                                TRUE);
 
 			if (g_focus_hWnd == hWnd && wfc && !wfc->fullscreen)
 			{
-				DEBUG_KBD("loosing focus %X", hWnd);
+				DEBUG_KBD("losing focus %X", hWnd);
 
 				if (alt_ctrl_down())
 					g_flipping_out = TRUE;
@@ -837,11 +837,10 @@ LRESULT CALLBACK wf_event_proc(HWND hWnd, UINT Msg, WPARAM wParam, LPARAM lParam
 BOOL wf_scale_blt(wfContext* wfc, HDC hdc, int x, int y, int w, int h, HDC hdcSrc, int x1, int y1,
                   DWORD rop)
 {
-	rdpSettings* settings;
 	UINT32 ww, wh, dw, dh;
 	WINPR_ASSERT(wfc);
 
-	settings = wfc->common.context.settings;
+	rdpSettings* settings = wfc->common.context.settings;
 	WINPR_ASSERT(settings);
 
 	if (!wfc->client_width)

@@ -25,6 +25,7 @@
 
 #include <winpr/crt.h>
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 #include <winpr/tchar.h>
 #include <winpr/synch.h>
 #include <winpr/dsparse.h>
@@ -63,6 +64,7 @@ static const char* PTYPE_STRINGS[] = { "PTYPE_REQUEST",       "PTYPE_PING",
 
 static const char* client_in_state_str(CLIENT_IN_CHANNEL_STATE state)
 {
+	// NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
 	const char* str = "CLIENT_IN_CHANNEL_STATE_UNKNOWN";
 
 	switch (state)
@@ -94,12 +96,15 @@ static const char* client_in_state_str(CLIENT_IN_CHANNEL_STATE state)
 		case CLIENT_IN_CHANNEL_STATE_FINAL:
 			str = "CLIENT_IN_CHANNEL_STATE_FINAL";
 			break;
+		default:
+			break;
 	}
 	return str;
 }
 
 static const char* client_out_state_str(CLIENT_OUT_CHANNEL_STATE state)
 {
+	// NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
 	const char* str = "CLIENT_OUT_CHANNEL_STATE_UNKNOWN";
 
 	switch (state)
@@ -143,12 +148,15 @@ static const char* client_out_state_str(CLIENT_OUT_CHANNEL_STATE state)
 		case CLIENT_OUT_CHANNEL_STATE_FINAL:
 			str = "CLIENT_OUT_CHANNEL_STATE_FINAL";
 			break;
+		default:
+			break;
 	}
 	return str;
 }
 
 const char* rpc_vc_state_str(VIRTUAL_CONNECTION_STATE state)
 {
+	// NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores)
 	const char* str = "VIRTUAL_CONNECTION_STATE_UNKNOWN";
 
 	switch (state)
@@ -175,6 +183,8 @@ const char* rpc_vc_state_str(VIRTUAL_CONNECTION_STATE state)
 
 		case VIRTUAL_CONNECTION_STATE_FINAL:
 			str = "VIRTUAL_CONNECTION_STATE_FINAL";
+			break;
+		default:
 			break;
 	}
 	return str;
@@ -277,7 +287,7 @@ rpcconn_common_hdr_t rpc_pdu_header_init(const rdpRpc* rpc)
 
 size_t rpc_offset_align(size_t* offset, size_t alignment)
 {
-	size_t pad;
+	size_t pad = 0;
 	pad = *offset;
 	*offset = (*offset + alignment - 1) & ~(alignment - 1);
 	pad = *offset - pad;
@@ -371,10 +381,10 @@ BOOL rpc_get_stub_data_info(rdpRpc* rpc, const rpcconn_hdr_t* header, size_t* po
 	size_t used = 0;
 	size_t offset = 0;
 	BOOL rc = FALSE;
-	UINT32 frag_length;
-	UINT32 auth_length;
+	UINT32 frag_length = 0;
+	UINT32 auth_length = 0;
 	UINT32 auth_pad_length = 0;
-	UINT32 sec_trailer_offset;
+	UINT32 sec_trailer_offset = 0;
 	const rpc_sec_trailer* sec_trailer = NULL;
 
 	WINPR_ASSERT(rpc);
@@ -451,7 +461,7 @@ fail:
 
 SSIZE_T rpc_channel_read(RpcChannel* channel, wStream* s, size_t length)
 {
-	int status;
+	int status = 0;
 
 	if (!channel || (length > INT32_MAX))
 		return -1;
@@ -474,13 +484,10 @@ SSIZE_T rpc_channel_read(RpcChannel* channel, wStream* s, size_t length)
 
 SSIZE_T rpc_channel_write(RpcChannel* channel, const BYTE* data, size_t length)
 {
-	int status;
-
-	if (!channel || (length > INT32_MAX))
+	if (!channel)
 		return -1;
 
-	status = freerdp_tls_write_all(channel->tls, data, (INT32)length);
-	return status;
+	return freerdp_tls_write_all(channel->tls, data, length);
 }
 
 BOOL rpc_in_channel_transition_to_state(RpcInChannel* inChannel, CLIENT_IN_CHANNEL_STATE state)
@@ -496,8 +503,8 @@ BOOL rpc_in_channel_transition_to_state(RpcInChannel* inChannel, CLIENT_IN_CHANN
 static int rpc_channel_rpch_init(RpcClient* client, RpcChannel* channel, const char* inout,
                                  const GUID* guid)
 {
-	HttpContext* http;
-	rdpSettings* settings;
+	HttpContext* http = NULL;
+	rdpSettings* settings = NULL;
 	UINT32 timeout = 0;
 
 	if (!client || !channel || !inout || !client->context || !client->context->settings)
@@ -701,49 +708,42 @@ fail:
 
 static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 {
-	int sockfd;
-	rdpTls* tls;
-	int tlsStatus;
-	BIO* socketBio;
-	BIO* bufferedBio;
-	rdpContext* context;
-	rdpSettings* settings;
-	const char* proxyUsername;
-	const char* proxyPassword;
-
 	if (!channel || !channel->client || !channel->client->context ||
 	    !channel->client->context->settings)
 		return FALSE;
 
-	context = channel->client->context;
-	settings = context->settings;
-	proxyUsername = freerdp_settings_get_string(settings, FreeRDP_ProxyUsername);
-	proxyPassword = freerdp_settings_get_string(settings, FreeRDP_ProxyPassword);
-	{
-		sockfd =
-		    freerdp_tcp_connect(context, channel->client->host, channel->client->port, timeout);
+	rdpContext* context = channel->client->context;
+	WINPR_ASSERT(context);
 
-		if (sockfd < 0)
-			return FALSE;
-	}
-	socketBio = BIO_new(BIO_s_simple_socket());
+	rdpSettings* settings = context->settings;
+	WINPR_ASSERT(settings);
 
-	if (!socketBio)
+	const char* proxyUsername = freerdp_settings_get_string(settings, FreeRDP_ProxyUsername);
+	const char* proxyPassword = freerdp_settings_get_string(settings, FreeRDP_ProxyPassword);
+
+	rdpTransport* transport = freerdp_get_transport(context);
+	rdpTransportLayer* layer =
+	    transport_connect_layer(transport, channel->client->host, channel->client->port, timeout);
+
+	if (!layer)
+		return FALSE;
+
+	BIO* layerBio = BIO_new(BIO_s_transport_layer());
+	if (!layerBio)
 	{
-		closesocket(sockfd);
+		transport_layer_free(layer);
 		return FALSE;
 	}
+	BIO_set_data(layerBio, layer);
 
-	BIO_set_fd(socketBio, sockfd, BIO_CLOSE);
-	bufferedBio = BIO_new(BIO_s_buffered_socket());
-
+	BIO* bufferedBio = BIO_new(BIO_s_buffered_socket());
 	if (!bufferedBio)
 	{
-		BIO_free_all(socketBio);
+		BIO_free_all(layerBio);
 		return FALSE;
 	}
 
-	bufferedBio = BIO_push(bufferedBio, socketBio);
+	bufferedBio = BIO_push(bufferedBio, layerBio);
 
 	if (!BIO_set_nonblock(bufferedBio, TRUE))
 	{
@@ -753,8 +753,9 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 
 	if (channel->client->isProxy)
 	{
-		if (!proxy_connect(settings, bufferedBio, proxyUsername, proxyPassword,
-		                   settings->GatewayHostname, settings->GatewayPort))
+		WINPR_ASSERT(settings->GatewayPort <= UINT16_MAX);
+		if (!proxy_connect(context, bufferedBio, proxyUsername, proxyPassword,
+		                   settings->GatewayHostname, (UINT16)settings->GatewayPort))
 		{
 			BIO_free_all(bufferedBio);
 			return FALSE;
@@ -762,15 +763,15 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 	}
 
 	channel->bio = bufferedBio;
-	tls = channel->tls = freerdp_tls_new(settings);
+	rdpTls* tls = channel->tls = freerdp_tls_new(context);
 
 	if (!tls)
 		return FALSE;
 
 	tls->hostname = settings->GatewayHostname;
-	tls->port = settings->GatewayPort;
+	tls->port = WINPR_ASSERTING_INT_CAST(int32_t, MIN(UINT16_MAX, settings->GatewayPort));
 	tls->isGatewayTransport = TRUE;
-	tlsStatus = freerdp_tls_connect(tls, bufferedBio);
+	int tlsStatus = freerdp_tls_connect(tls, bufferedBio);
 
 	if (tlsStatus < 1)
 	{
@@ -791,7 +792,7 @@ static BOOL rpc_channel_tls_connect(RpcChannel* channel, UINT32 timeout)
 
 static int rpc_in_channel_connect(RpcInChannel* inChannel, UINT32 timeout)
 {
-	rdpContext* context;
+	rdpContext* context = NULL;
 
 	if (!inChannel || !inChannel->common.client || !inChannel->common.client->context)
 		return -1;
@@ -823,9 +824,9 @@ static int rpc_in_channel_connect(RpcInChannel* inChannel, UINT32 timeout)
 	return 1;
 }
 
-static int rpc_out_channel_connect(RpcOutChannel* outChannel, int timeout)
+static int rpc_out_channel_connect(RpcOutChannel* outChannel, UINT32 timeout)
 {
-	rdpContext* context;
+	rdpContext* context = NULL;
 
 	if (!outChannel || !outChannel->common.client || !outChannel->common.client->context)
 		return -1;
@@ -855,9 +856,9 @@ static int rpc_out_channel_connect(RpcOutChannel* outChannel, int timeout)
 	return 1;
 }
 
-int rpc_out_channel_replacement_connect(RpcOutChannel* outChannel, int timeout)
+int rpc_out_channel_replacement_connect(RpcOutChannel* outChannel, uint32_t timeout)
 {
-	rdpContext* context;
+	rdpContext* context = NULL;
 
 	if (!outChannel || !outChannel->common.client || !outChannel->common.client->context)
 		return -1;
@@ -889,9 +890,9 @@ int rpc_out_channel_replacement_connect(RpcOutChannel* outChannel, int timeout)
 
 BOOL rpc_connect(rdpRpc* rpc, UINT32 timeout)
 {
-	RpcInChannel* inChannel;
-	RpcOutChannel* outChannel;
-	RpcVirtualConnection* connection;
+	RpcInChannel* inChannel = NULL;
+	RpcOutChannel* outChannel = NULL;
+	RpcVirtualConnection* connection = NULL;
 	rpc->VirtualConnection = rpc_virtual_connection_new(rpc);
 
 	if (!rpc->VirtualConnection)
@@ -914,7 +915,7 @@ BOOL rpc_connect(rdpRpc* rpc, UINT32 timeout)
 rdpRpc* rpc_new(rdpTransport* transport)
 {
 	rdpContext* context = transport_get_context(transport);
-	rdpRpc* rpc;
+	rdpRpc* rpc = NULL;
 
 	WINPR_ASSERT(context);
 

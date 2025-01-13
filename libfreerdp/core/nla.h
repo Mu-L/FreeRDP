@@ -58,7 +58,7 @@ FREERDP_LOCAL BOOL nla_set_state(rdpNla* nla, NLA_STATE state);
 FREERDP_LOCAL const char* nla_get_state_str(NLA_STATE state);
 
 FREERDP_LOCAL DWORD nla_get_error(rdpNla* nla);
-FREERDP_LOCAL UINT32 nla_get_sspi_error(rdpNla* nla);
+FREERDP_LOCAL INT32 nla_get_sspi_error(rdpNla* nla);
 
 FREERDP_LOCAL BOOL nla_set_service_principal(rdpNla* nla, const char* service,
                                              const char* hostname);
@@ -75,5 +75,8 @@ WINPR_ATTR_MALLOC(nla_free, 1)
 FREERDP_LOCAL rdpNla* nla_new(rdpContext* context, rdpTransport* transport);
 
 FREERDP_LOCAL void nla_set_early_user_auth(rdpNla* nla, BOOL earlyUserAuth);
+FREERDP_LOCAL BOOL nla_encrypt(rdpNla* nla, const SecBuffer* inBuffer, SecBuffer* outBuffer);
+FREERDP_LOCAL BOOL nla_decrypt(rdpNla* nla, const SecBuffer* inBuffer, SecBuffer* outBuffer);
+FREERDP_LOCAL SECURITY_STATUS nla_QueryContextAttributes(rdpNla* nla, DWORD ulAttr, PVOID pBuffer);
 
 #endif /* FREERDP_LIB_CORE_NLA_H */

@@ -54,8 +54,10 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
 
 		if (freerdp_settings_get_bool(settings, FreeRDP_Fullscreen))
 		{
-			freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, screenFrame.size.width);
-			freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, screenFrame.size.height);
+			(void)freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,
+			                                  screenFrame.size.width);
+			(void)freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight,
+			                                  screenFrame.size.height);
 		}
 
 		PubSub_SubscribeConnectionResult(context->pubSub, AppDelegate_ConnectionResultEventHandler);
@@ -111,6 +113,11 @@ void mac_set_view_size(rdpContext *context, MRDPView *view);
 }
 
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender
+{
+	return YES;
+}
+
+- (BOOL)applicationSupportsSecureRestorableState:(NSApplication *)app
 {
 	return YES;
 }
@@ -283,7 +290,7 @@ void AppDelegate_EmbedWindowEventHandler(void *ctx, const EmbedWindowEventArgs *
 void AppDelegate_ResizeWindowEventHandler(void *ctx, const ResizeWindowEventArgs *e)
 {
 	rdpContext *context = (rdpContext *)ctx;
-	fprintf(stderr, "ResizeWindowEventHandler: %d %d\n", e->width, e->height);
+	(void)fprintf(stderr, "ResizeWindowEventHandler: %d %d\n", e->width, e->height);
 
 	if (_singleDelegate)
 	{

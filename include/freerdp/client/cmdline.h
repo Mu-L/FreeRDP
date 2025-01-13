@@ -56,12 +56,14 @@ extern "C"
 	 * \param handle_option the handler function for custom arguments.
 	 * \param handle_userdata custom data supplied to \b handle_option as context
 	 *
+	 * \since version 3.0.0
+	 *
 	 * \return \b 0 in case of success, a negative number in case of failure.
 	 */
 	FREERDP_API int freerdp_client_settings_parse_command_line_arguments_ex(
 	    rdpSettings* settings, int argc, char** argv, BOOL allowUnknown,
 	    COMMAND_LINE_ARGUMENT_A* args, size_t count,
-	    int (*handle_option)(const COMMAND_LINE_ARGUMENT* arg, void* custom),
+	    int (*handle_option)(const COMMAND_LINE_ARGUMENT_A* arg, void* custom),
 	    void* handle_userdata);
 
 	FREERDP_API int freerdp_client_settings_command_line_status_print(rdpSettings* settings,
@@ -73,12 +75,49 @@ extern "C"
 	                                                     const COMMAND_LINE_ARGUMENT_A* custom);
 	FREERDP_API BOOL freerdp_client_load_addins(rdpChannels* channels, rdpSettings* settings);
 
+	/** Print a command line warning about the component being unmaintained.
+	 *
+	 *  \since version 3.0.0
+	 */
 	FREERDP_API void freerdp_client_warn_unmaintained(int argc, char* argv[]);
+
+	/** Print a command line warning about the component being experimental.
+	 *
+	 *  \since version 3.0.0
+	 */
 	FREERDP_API void freerdp_client_warn_experimental(int argc, char* argv[]);
+
+	/** Print a command line warning about the component being deprecated.
+	 *
+	 *  \since version 3.0.0
+	 */
 	FREERDP_API void freerdp_client_warn_deprecated(int argc, char* argv[]);
 
 	FREERDP_API BOOL freerdp_client_print_version(void);
+
+	/** @brief prints the version of the client including the binary name extracted from \b argv
+	 *
+	 *  @param argc the number of command line arguments, must be >= 0
+	 *  @param argv the array of command line argument strings
+	 *
+	 *  @return \b TRUE for success
+	 *
+	 *  @since version 3.10.0
+	 */
+	FREERDP_API BOOL freerdp_client_print_version_ex(int argc, char** argv);
 	FREERDP_API BOOL freerdp_client_print_buildconfig(void);
+
+	/** @brief prints the buidconfiguration of the client including the binary name extracted from
+	 * \b argv
+	 *
+	 *  @param argc the number of command line arguments, must be >= 0
+	 *  @param argv the array of command line argument strings
+	 *
+	 *  @return \b TRUE for success
+	 *
+	 *  @since version 3.10.0
+	 */
+	FREERDP_API BOOL freerdp_client_print_buildconfig_ex(int argc, char** argv);
 	FREERDP_API BOOL freerdp_client_print_command_line_help(int argc, char** argv);
 	FREERDP_API BOOL freerdp_client_print_command_line_help_ex(
 	    int argc, char** argv, const COMMAND_LINE_ARGUMENT_A* custom);
@@ -88,12 +127,12 @@ extern "C"
 	FREERDP_API BOOL freerdp_set_connection_type(rdpSettings* settings, UINT32 type);
 
 	FREERDP_API BOOL freerdp_client_add_device_channel(rdpSettings* settings, size_t count,
-	                                                   const char** params);
+	                                                   const char* const* params);
 	FREERDP_API BOOL freerdp_client_add_static_channel(rdpSettings* settings, size_t count,
-	                                                   const char** params);
+	                                                   const char* const* params);
 	FREERDP_API BOOL freerdp_client_del_static_channel(rdpSettings* settings, const char* name);
 	FREERDP_API BOOL freerdp_client_add_dynamic_channel(rdpSettings* settings, size_t count,
-	                                                    const char** params);
+	                                                    const char* const* params);
 	FREERDP_API BOOL freerdp_client_del_dynamic_channel(rdpSettings* settings, const char* name);
 
 #ifdef __cplusplus

@@ -41,6 +41,7 @@ See the header file "utf.h" for complete documentation.
 #include <winpr/wtypes.h>
 #include <winpr/string.h>
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 
 #include "unicode.h"
 
@@ -118,7 +119,7 @@ static const uint32_t offsetsFromUTF8[6] = { 0x00000000UL, 0x00003080UL, 0x000E2
  * Once the bits are split out into bytes of UTF-8, this is a mask OR-ed
  * into the first byte, depending on how many bytes follow.  There are
  * as many entries in this table as there are UTF-8 sequence types.
- * (I.e., one byte sequence, two byte... etc.). Remember that sequencs
+ * (I.e., one byte sequence, two byte... etc.). Remember that sequence
  * for *legal* UTF-8 will be 4 or fewer bytes total.
  */
 static const uint8_t firstByteMark[7] = { 0x00, 0x00, 0xC0, 0xE0, 0xF0, 0xF8, 0xFC };
@@ -140,18 +141,14 @@ static ConversionResult winpr_ConvertUTF16toUTF8_Internal(const uint16_t** sourc
                                                           uint8_t** targetStart, uint8_t* targetEnd,
                                                           ConversionFlags flags)
 {
-	uint8_t* target;
-	const uint16_t* source;
-	bool computeLength;
-	ConversionResult result;
-	computeLength = (!targetEnd) ? true : false;
-	source = *sourceStart;
-	target = *targetStart;
-	result = conversionOK;
+	bool computeLength = (!targetEnd) ? true : false;
+	const uint16_t* source = *sourceStart;
+	uint8_t* target = *targetStart;
+	ConversionResult result = conversionOK;
 
 	while (source < sourceEnd)
 	{
-		uint32_t ch;
+		uint32_t ch = 0;
 		unsigned short bytesToWrite = 0;
 		const uint32_t byteMask = 0xBF;
 		const uint32_t byteMark = 0x80;
@@ -309,7 +306,7 @@ static ConversionResult winpr_ConvertUTF16toUTF8_Internal(const uint16_t** sourc
 
 static bool isLegalUTF8(const uint8_t* source, int length)
 {
-	uint8_t a;
+	uint8_t a = 0;
 	const uint8_t* srcptr = source + length;
 
 	switch (length)
@@ -388,19 +385,16 @@ static ConversionResult winpr_ConvertUTF8toUTF16_Internal(const uint8_t** source
                                                           uint16_t* targetEnd,
                                                           ConversionFlags flags)
 {
-	uint16_t* target;
-	const uint8_t* source;
-	bool computeLength;
-	ConversionResult result;
-	computeLength = (!targetEnd) ? true : false;
-	result = conversionOK;
-	source = *sourceStart;
-	target = *targetStart;
+	bool computeLength = (!targetEnd) ? true : false;
+	ConversionResult result = conversionOK;
+	const uint8_t* source = *sourceStart;
+	uint16_t* target = *targetStart;
 
 	while (source < sourceEnd)
 	{
 		uint32_t ch = 0;
-		unsigned short extraBytesToRead = trailingBytesForUTF8[*source];
+		unsigned short extraBytesToRead =
+		    WINPR_ASSERTING_INT_CAST(unsigned short, trailingBytesForUTF8[*source]);
 
 		if ((source + extraBytesToRead) >= sourceEnd)
 		{
@@ -543,15 +537,15 @@ static ConversionResult winpr_ConvertUTF8toUTF16_Internal(const uint8_t** source
 
 static int winpr_ConvertUTF8toUTF16(const uint8_t* src, int cchSrc, uint16_t* dst, int cchDst)
 {
-	size_t length;
+	size_t length = 0;
 	uint16_t* dstBeg = NULL;
 	uint16_t* dstEnd = NULL;
-	const uint8_t* srcBeg;
-	const uint8_t* srcEnd;
-	ConversionResult result;
+	const uint8_t* srcBeg = NULL;
+	const uint8_t* srcEnd = NULL;
+	ConversionResult result = sourceIllegal;
 
 	if (cchSrc == -1)
-		cchSrc = strlen((char*)src) + 1;
+		cchSrc = (int)strnlen((const char*)src, INT32_MAX - 1) + 1;
 
 	srcBeg = src;
 	srcEnd = &src[cchSrc];
@@ -580,20 +574,20 @@ static int winpr_ConvertUTF8toUTF16(const uint8_t* src, int cchSrc, uint16_t* ds
 		return 0;
 	}
 
-	return (result == conversionOK) ? length : 0;
+	return (result == conversionOK) ? WINPR_ASSERTING_INT_CAST(int, length) : 0;
 }
 
 static int winpr_ConvertUTF16toUTF8(const uint16_t* src, int cchSrc, uint8_t* dst, int cchDst)
 {
-	size_t length;
+	size_t length = 0;
 	uint8_t* dstBeg = NULL;
 	uint8_t* dstEnd = NULL;
-	const uint16_t* srcBeg;
-	const uint16_t* srcEnd;
-	ConversionResult result;
+	const uint16_t* srcBeg = NULL;
+	const uint16_t* srcEnd = NULL;
+	ConversionResult result = sourceIllegal;
 
 	if (cchSrc == -1)
-		cchSrc = _wcslen((uint16_t*)src) + 1;
+		cchSrc = (int)_wcsnlen((const WCHAR*)src, INT32_MAX - 1) + 1;
 
 	srcBeg = src;
 	srcEnd = &src[cchSrc];
@@ -622,7 +616,7 @@ static int winpr_ConvertUTF16toUTF8(const uint16_t* src, int cchSrc, uint8_t* ds
 		return 0;
 	}
 
-	return (result == conversionOK) ? length : 0;
+	return (result == conversionOK) ? WINPR_ASSERTING_INT_CAST(int, length) : 0;
 }
 
 /* --------------------------------------------------------------------- */
@@ -663,7 +657,8 @@ int int_MultiByteToWideChar(UINT CodePage, DWORD dwFlags, LPCSTR lpMultiByteStr,
 			return 0;
 	}
 
-	return winpr_ConvertUTF8toUTF16((const uint8_t*)lpMultiByteStr, cbCharLen,
+	return winpr_ConvertUTF8toUTF16((const uint8_t*)lpMultiByteStr,
+	                                WINPR_ASSERTING_INT_CAST(int, cbCharLen),
 	                                (uint16_t*)lpWideCharStr, cchWideChar);
 }
 
@@ -698,6 +693,7 @@ int int_WideCharToMultiByte(UINT CodePage, DWORD dwFlags, LPCWSTR lpWideCharStr,
 	 * in bytes for lpMultiByteStr and makes no use of the output parameter itself.
 	 */
 
-	return winpr_ConvertUTF16toUTF8((const uint16_t*)lpWideCharStr, cbCharLen,
+	return winpr_ConvertUTF16toUTF8((const uint16_t*)lpWideCharStr,
+	                                WINPR_ASSERTING_INT_CAST(int, cbCharLen),
 	                                (uint8_t*)lpMultiByteStr, cbMultiByte);
 }

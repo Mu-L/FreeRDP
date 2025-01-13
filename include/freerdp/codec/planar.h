@@ -22,6 +22,7 @@
 #ifndef FREERDP_CODEC_PLANAR_H
 #define FREERDP_CODEC_PLANAR_H
 
+#include <winpr/cast.h>
 #include <winpr/crt.h>
 
 #include <freerdp/codec/color.h>
@@ -32,26 +33,35 @@
 #define PLANAR_FORMAT_HEADER_NA (1 << 5)
 #define PLANAR_FORMAT_HEADER_CLL_MASK 0x07
 
-#define PLANAR_CONTROL_BYTE(_nRunLength, _cRawBytes) \
-	(_nRunLength & 0x0F) | ((_cRawBytes & 0x0F) << 4)
-
-#define PLANAR_CONTROL_BYTE_RUN_LENGTH(_controlByte) (_controlByte & 0x0F)
-#define PLANAR_CONTROL_BYTE_RAW_BYTES(_controlByte) ((_controlByte >> 4) & 0x0F)
-
 #ifdef __cplusplus
 extern "C"
 {
 #endif
 
+	static inline BYTE PLANAR_CONTROL_BYTE(UINT32 nRunLength, UINT32 cRawBytes)
+	{
+		return WINPR_ASSERTING_INT_CAST(UINT8, ((nRunLength & 0x0F) | ((cRawBytes & 0x0F) << 4)));
+	}
+
+	static inline BYTE PLANAR_CONTROL_BYTE_RUN_LENGTH(UINT32 controlByte)
+	{
+		return (controlByte & 0x0F);
+	}
+	static inline BYTE PLANAR_CONTROL_BYTE_RAW_BYTES(UINT32 controlByte)
+	{
+		return ((controlByte >> 4) & 0x0F);
+	}
+
 	typedef struct S_BITMAP_PLANAR_CONTEXT BITMAP_PLANAR_CONTEXT;
 
-	FREERDP_API BYTE* freerdp_bitmap_compress_planar(BITMAP_PLANAR_CONTEXT* context,
-	                                                 const BYTE* data, UINT32 format, UINT32 width,
-	                                                 UINT32 height, UINT32 scanline, BYTE* dstData,
-	                                                 UINT32* pDstSize);
+	FREERDP_API BYTE* freerdp_bitmap_compress_planar(BITMAP_PLANAR_CONTEXT* WINPR_RESTRICT context,
+	                                                 const BYTE* WINPR_RESTRICT data, UINT32 format,
+	                                                 UINT32 width, UINT32 height, UINT32 scanline,
+	                                                 BYTE* WINPR_RESTRICT dstData,
+	                                                 UINT32* WINPR_RESTRICT pDstSize);
 
-	FREERDP_API BOOL freerdp_bitmap_planar_context_reset(BITMAP_PLANAR_CONTEXT* context,
-	                                                     UINT32 width, UINT32 height);
+	FREERDP_API BOOL freerdp_bitmap_planar_context_reset(
+	    BITMAP_PLANAR_CONTEXT* WINPR_RESTRICT context, UINT32 width, UINT32 height);
 
 	FREERDP_API void freerdp_bitmap_planar_context_free(BITMAP_PLANAR_CONTEXT* context);
 
@@ -59,14 +69,17 @@ extern "C"
 	FREERDP_API BITMAP_PLANAR_CONTEXT* freerdp_bitmap_planar_context_new(DWORD flags, UINT32 width,
 	                                                                     UINT32 height);
 
-	FREERDP_API void freerdp_planar_switch_bgr(BITMAP_PLANAR_CONTEXT* planar, BOOL bgr);
-	FREERDP_API void freerdp_planar_topdown_image(BITMAP_PLANAR_CONTEXT* planar, BOOL topdown);
+	FREERDP_API void freerdp_planar_switch_bgr(BITMAP_PLANAR_CONTEXT* WINPR_RESTRICT planar,
+	                                           BOOL bgr);
+	FREERDP_API void freerdp_planar_topdown_image(BITMAP_PLANAR_CONTEXT* WINPR_RESTRICT planar,
+	                                              BOOL topdown);
 
-	FREERDP_API BOOL planar_decompress(BITMAP_PLANAR_CONTEXT* planar, const BYTE* pSrcData,
-	                                   UINT32 SrcSize, UINT32 nSrcWidth, UINT32 nSrcHeight,
-	                                   BYTE* pDstData, UINT32 DstFormat, UINT32 nDstStep,
-	                                   UINT32 nXDst, UINT32 nYDst, UINT32 nDstWidth,
-	                                   UINT32 nDstHeight, BOOL vFlip);
+	FREERDP_API BOOL planar_decompress(BITMAP_PLANAR_CONTEXT* WINPR_RESTRICT planar,
+	                                   const BYTE* WINPR_RESTRICT pSrcData, UINT32 SrcSize,
+	                                   UINT32 nSrcWidth, UINT32 nSrcHeight,
+	                                   BYTE* WINPR_RESTRICT pDstData, UINT32 DstFormat,
+	                                   UINT32 nDstStep, UINT32 nXDst, UINT32 nYDst,
+	                                   UINT32 nDstWidth, UINT32 nDstHeight, BOOL vFlip);
 
 #ifdef __cplusplus
 }

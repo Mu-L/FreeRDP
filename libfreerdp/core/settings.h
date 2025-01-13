@@ -35,12 +35,14 @@
 
 #include <string.h>
 
+FREERDP_LOCAL BOOL freerdp_settings_enforce_monitor_exists(rdpSettings* settings);
 FREERDP_LOCAL void freerdp_settings_print_warnings(const rdpSettings* settings);
+FREERDP_LOCAL BOOL freerdp_settings_check_client_after_preconnect(const rdpSettings* settings);
 FREERDP_LOCAL BOOL freerdp_settings_set_default_order_support(rdpSettings* settings);
 FREERDP_LOCAL BOOL freerdp_settings_clone_keys(rdpSettings* dst, const rdpSettings* src);
 FREERDP_LOCAL void freerdp_settings_free_keys(rdpSettings* dst, BOOL cleanup);
 FREERDP_LOCAL BOOL freerdp_settings_set_string_(rdpSettings* settings,
-                                                FreeRDP_Settings_Keys_String id, char* val,
+                                                FreeRDP_Settings_Keys_String id, const char* val,
                                                 size_t len);
 FREERDP_LOCAL BOOL freerdp_settings_set_string_copy_(rdpSettings* settings,
                                                      FreeRDP_Settings_Keys_String id,
@@ -68,8 +70,8 @@ FREERDP_LOCAL const char* freerdp_settings_glyph_level_string(UINT32 level, char
 
 FREERDP_LOCAL BOOL freerdp_settings_set_pointer_len_(rdpSettings* settings,
                                                      FreeRDP_Settings_Keys_Pointer id,
-                                                     SSIZE_T lenId, const void* data, size_t len,
-                                                     size_t size);
+                                                     FreeRDP_Settings_Keys_UInt32 lenId,
+                                                     const void* data, size_t len, size_t size);
 FREERDP_LOCAL BOOL freerdp_target_net_adresses_reset(rdpSettings* settings, size_t size);
 
 #endif /* FREERDP_LIB_CORE_SETTINGS_H */
