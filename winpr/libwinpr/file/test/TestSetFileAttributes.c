@@ -35,14 +35,13 @@ static const DWORD allflags[] = {
 static BOOL test_SetFileAttributesA(void)
 {
 	BOOL rc = FALSE;
-	HANDLE handle;
-	DWORD x;
+	HANDLE handle = NULL;
 	const DWORD flags[] = { 0, FILE_ATTRIBUTE_READONLY };
 	char* name = GetKnownSubPath(KNOWN_PATH_TEMP, "afsklhjwe4oq5iu432oijrlkejadlkhjaklhfdkahfd");
 	if (!name)
 		goto fail;
 
-	for (x = 0; x < ARRAYSIZE(allflags); x++)
+	for (size_t x = 0; x < ARRAYSIZE(allflags); x++)
 	{
 		const DWORD flag = allflags[x];
 		const BOOL brc = SetFileAttributesA(NULL, flag);
@@ -58,11 +57,11 @@ static BOOL test_SetFileAttributesA(void)
 	                     FILE_ATTRIBUTE_NORMAL, NULL);
 	if (handle == INVALID_HANDLE_VALUE)
 		goto fail;
-	CloseHandle(handle);
+	(void)CloseHandle(handle);
 
-	for (x = 0; x < ARRAYSIZE(flags); x++)
+	for (size_t x = 0; x < ARRAYSIZE(flags); x++)
 	{
-		DWORD attr;
+		DWORD attr = 0;
 		const DWORD flag = flags[x];
 		const BOOL brc = SetFileAttributesA(name, flag);
 		if (!brc)
@@ -88,8 +87,7 @@ static BOOL test_SetFileAttributesW(void)
 {
 	BOOL rc = FALSE;
 	WCHAR* name = NULL;
-	HANDLE handle;
-	DWORD x;
+	HANDLE handle = NULL;
 	const DWORD flags[] = { 0, FILE_ATTRIBUTE_READONLY };
 	char* base = GetKnownSubPath(KNOWN_PATH_TEMP, "afsklhjwe4oq5iu432oijrlkejadlkhjaklhfdkahfd");
 	if (!base)
@@ -99,7 +97,7 @@ static BOOL test_SetFileAttributesW(void)
 	if (!name)
 		goto fail;
 
-	for (x = 0; x < ARRAYSIZE(allflags); x++)
+	for (size_t x = 0; x < ARRAYSIZE(allflags); x++)
 	{
 		const DWORD flag = allflags[x];
 		const BOOL brc = SetFileAttributesW(NULL, flag);
@@ -115,11 +113,11 @@ static BOOL test_SetFileAttributesW(void)
 	                     FILE_ATTRIBUTE_NORMAL, NULL);
 	if (handle == INVALID_HANDLE_VALUE)
 		goto fail;
-	CloseHandle(handle);
+	(void)CloseHandle(handle);
 
-	for (x = 0; x < ARRAYSIZE(flags); x++)
+	for (size_t x = 0; x < ARRAYSIZE(flags); x++)
 	{
-		DWORD attr;
+		DWORD attr = 0;
 		const DWORD flag = flags[x];
 		const BOOL brc = SetFileAttributesW(name, flag);
 		if (!brc)

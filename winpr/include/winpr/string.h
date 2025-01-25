@@ -28,6 +28,9 @@
 #include <winpr/winpr.h>
 #include <winpr/wtypes.h>
 
+WINPR_PRAGMA_DIAG_PUSH
+WINPR_PRAGMA_DIAG_IGNORED_RESERVED_IDENTIFIER
+
 #ifdef __cplusplus
 extern "C"
 {
@@ -237,7 +240,7 @@ extern "C"
 	/** \brief Converts multistrings form UTF-16 to UTF-8
 	 *
 	 * The function does string conversions of any input string of wlen characters.
-	 * Any character in the buffer (incuding any '\0') is converted.
+	 * Any character in the buffer (including any '\0') is converted.
 	 *
 	 * Supplying len = 0 will return the required size of the buffer in characters.
 	 *
@@ -258,7 +261,7 @@ extern "C"
 	 *
 	 * The function does string conversions of any '\0' terminated input string
 	 *
-	 * Supplying len = 0 will return the required size of the buffer in characters.
+	 * Supplying wlen = 0 will return the required size of the buffer in characters.
 	 *
 	 * \warning Supplying a buffer length smaller than required will result in
 	 * platform dependent (=undefined) behaviour!
@@ -276,7 +279,7 @@ extern "C"
 	 * The function does string conversions of any input string of len (or less)
 	 * characters until it reaches the first '\0'.
 	 *
-	 * Supplying len = 0 will return the required size of the buffer in characters.
+	 * Supplying wlen = 0 will return the required size of the buffer in characters.
 	 *
 	 * \warning Supplying a buffer length smaller than required will result in
 	 * platform dependent (=undefined) behaviour!
@@ -293,9 +296,9 @@ extern "C"
 	/** \brief Converts multistrings form UTF-8 to UTF-16
 	 *
 	 * The function does string conversions of any input string of len characters.
-	 * Any character in the buffer (incuding any '\0') is converted.
+	 * Any character in the buffer (including any '\0') is converted.
 	 *
-	 * Supplying len = 0 will return the required size of the buffer in characters.
+	 * Supplying wlen = 0 will return the required size of the buffer in characters.
 	 *
 	 * \warning Supplying a buffer length smaller than required will result in
 	 * platform dependent (=undefined) behaviour!
@@ -315,12 +318,12 @@ extern "C"
 	 * The function does string conversions of any '\0' terminated input string
 	 *
 	 *  \param wstr A '\0' terminated WCHAR string, may be NULL
-	 *  \param pSize Ignored if NULL, otherwise receives the length of the result string in
+	 *  \param pUtfCharLength Ignored if NULL, otherwise receives the length of the result string in
 	 * characters (strlen)
 	 *
 	 *  \return An allocated zero terminated UTF-8 string or NULL in case of failure.
 	 */
-	WINPR_API char* ConvertWCharToUtf8Alloc(const WCHAR* wstr, size_t* pSize);
+	WINPR_API char* ConvertWCharToUtf8Alloc(const WCHAR* wstr, size_t* pUtfCharLength);
 
 	/** \brief Converts form UTF-16 to UTF-8, returns an allocated string
 	 *
@@ -329,26 +332,28 @@ extern "C"
 	 *
 	 *  \param wstr A WCHAR string of \b wlen length
 	 *  \param wlen The (buffer) length in characters of \b wstr
-	 *  \param pSize Ignored if NULL, otherwise receives the length of the result string in
+	 *  \param pUtfCharLength Ignored if NULL, otherwise receives the length of the result string in
 	 * characters (strlen)
 	 *
 	 *  \return An allocated zero terminated UTF-8 string or NULL in case of failure.
 	 */
-	WINPR_API char* ConvertWCharNToUtf8Alloc(const WCHAR* wstr, size_t wlen, size_t* pSize);
+	WINPR_API char* ConvertWCharNToUtf8Alloc(const WCHAR* wstr, size_t wlen,
+	                                         size_t* pUtfCharLength);
 
 	/** \brief Converts multistring form UTF-16 to UTF-8, returns an allocated string
 	 *
 	 * The function does string conversions of any input string of len characters.
-	 * Any character in the buffer (incuding any '\0') is converted.
+	 * Any character in the buffer (including any '\0') is converted.
 	 *
 	 *  \param wstr A WCHAR string of \b len character length
 	 *  \param wlen The (buffer) length in characters of \b str
-	 *  \param pSize Ignored if NULL, otherwise receives the length of the result string in
+	 *  \param pUtfCharLength Ignored if NULL, otherwise receives the length of the result string in
 	 * characters (including any '\0' character)
 	 *
 	 *  \return An allocated double zero terminated UTF-8 string or NULL in case of failure.
 	 */
-	WINPR_API char* ConvertMszWCharNToUtf8Alloc(const WCHAR* wstr, size_t wlen, size_t* pSize);
+	WINPR_API char* ConvertMszWCharNToUtf8Alloc(const WCHAR* wstr, size_t wlen,
+	                                            size_t* pUtfCharLength);
 
 	/** \brief Converts form UTF-8 to UTF-16, returns an allocated string
 	 *
@@ -379,7 +384,7 @@ extern "C"
 	/** \brief Converts multistring form UTF-8 to UTF-16, returns an allocated string
 	 *
 	 * The function does string conversions of any input string of len characters.
-	 * Any character in the buffer (incuding any '\0') is converted.
+	 * Any character in the buffer (including any '\0') is converted.
 	 *
 	 *  \param str A CHAR string of \b len byte length
 	 *  \param len The (buffer) length in characters of \b str
@@ -424,11 +429,27 @@ extern "C"
 	WINPR_API INT64 GetLine(char** lineptr, size_t* size, FILE* stream);
 
 #if !defined(WINPR_HAVE_STRNDUP)
+	WINPR_ATTR_MALLOC(free, 1)
 	WINPR_API char* strndup(const char* s, size_t n);
 #endif
+
+	/** @brief WCHAR version of \b strndup
+	 *  creates a copy of a \b WCHAR string of \b n characters length. The copy will always be \b \0
+	 * terminated
+	 *
+	 *  @param s The \b WCHAR string to copy
+	 *  @param n The number of WCHAR to copy
+	 *
+	 *  @return An allocated copy of \b s, always \b \0 terminated
+	 *  @since version 3.10.0
+	 */
+	WINPR_ATTR_MALLOC(free, 1)
+	WINPR_API WCHAR* wcsndup(const WCHAR* s, size_t n);
 
 #ifdef __cplusplus
 }
 #endif
+
+WINPR_PRAGMA_DIAG_POP
 
 #endif /* WINPR_CRT_STRING_H */

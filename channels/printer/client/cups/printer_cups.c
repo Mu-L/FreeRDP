@@ -65,6 +65,8 @@ static bool is_mac_os_sonoma_or_later(void)
 	int major = 0;
 	int minor = 0;
 	int patch = 0;
+
+	// NOLINTNEXTLINE(cert-err34-c)
 	const int rc = sscanf(str, "%d.%d.%d", &major, &minor, &patch);
 	if (rc != 3)
 	{
@@ -103,15 +105,16 @@ typedef struct
 
 static void printer_cups_get_printjob_name(char* buf, size_t size, size_t id)
 {
-	struct tm tres;
+	struct tm tres = { 0 };
 	const time_t tt = time(NULL);
 	const struct tm* t = localtime_r(&tt, &tres);
 
 	WINPR_ASSERT(buf);
 	WINPR_ASSERT(size > 0);
 
-	sprintf_s(buf, size - 1, "FreeRDP Print %04d-%02d-%02d %02d-%02d-%02d - Job %" PRIdz,
-	          t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec, id);
+	(void)sprintf_s(buf, size - 1, "FreeRDP Print %04d-%02d-%02d %02d-%02d-%02d - Job %" PRIuz,
+	                t->tm_year + 1900, t->tm_mon + 1, t->tm_mday, t->tm_hour, t->tm_min, t->tm_sec,
+	                id);
 }
 
 static bool http_status_ok(http_status_t status)
@@ -146,17 +149,13 @@ static UINT write_printjob(rdpPrintJob* printjob, const BYTE* data, size_t size)
  */
 static UINT printer_cups_write_printjob(rdpPrintJob* printjob, const BYTE* data, size_t size)
 {
-	rdpCupsPrintJob* cups_printjob = (rdpCupsPrintJob*)printjob;
-
-	WINPR_ASSERT(cups_printjob);
-
 	return write_printjob(printjob, data, size);
 }
 
 static void printer_cups_close_printjob(rdpPrintJob* printjob)
 {
 	rdpCupsPrintJob* cups_printjob = (rdpCupsPrintJob*)printjob;
-	rdpCupsPrinter* cups_printer;
+	rdpCupsPrinter* cups_printer = NULL;
 
 	WINPR_ASSERT(cups_printjob);
 
@@ -177,7 +176,7 @@ static void printer_cups_close_printjob(rdpPrintJob* printjob)
 static rdpPrintJob* printer_cups_create_printjob(rdpPrinter* printer, UINT32 id)
 {
 	rdpCupsPrinter* cups_printer = (rdpCupsPrinter*)printer;
-	rdpCupsPrintJob* cups_printjob;
+	rdpCupsPrintJob* cups_printjob = NULL;
 
 	WINPR_ASSERT(cups_printer);
 
@@ -291,7 +290,7 @@ static void printer_cups_release_ref_printer(rdpPrinter* printer)
 static rdpPrinter* printer_cups_new_printer(rdpCupsPrinterDriver* cups_driver, const char* name,
                                             const char* driverName, BOOL is_default)
 {
-	rdpCupsPrinter* cups_printer;
+	rdpCupsPrinter* cups_printer = NULL;
 
 	cups_printer = (rdpCupsPrinter*)calloc(1, sizeof(rdpCupsPrinter));
 	if (!cups_printer)
@@ -348,7 +347,7 @@ static void printer_cups_release_enum_printers(rdpPrinter** printers)
 			(*cur)->ReleaseRef(*cur);
 		cur++;
 	}
-	free(printers);
+	free((void*)printers);
 }
 
 static rdpPrinter** printer_cups_enum_printers(rdpPrinterDriver* driver)
@@ -356,8 +355,6 @@ static rdpPrinter** printer_cups_enum_printers(rdpPrinterDriver* driver)
 	rdpPrinter** printers = NULL;
 	int num_printers = 0;
 	cups_dest_t* dests = NULL;
-	cups_dest_t* dest = NULL;
-	int i;
 	BOOL haveDefault = FALSE;
 	const int num_dests = cupsGetDests(&dests);
 
@@ -367,8 +364,9 @@ static rdpPrinter** printer_cups_enum_printers(rdpPrinterDriver* driver)
 	if (!printers)
 		return NULL;
 
-	for (i = 0, dest = dests; i < num_dests; i++, dest++)
+	for (size_t i = 0; i < (size_t)num_dests; i++)
 	{
+		const cups_dest_t* dest = &dests[i];
 		if (dest->instance == NULL)
 		{
 			rdpPrinter* current = printer_cups_new_printer((rdpCupsPrinterDriver*)driver,
@@ -432,7 +430,7 @@ static void printer_cups_release_ref_driver(rdpPrinterDriver* driver)
 		cups_driver->references--;
 }
 
-FREERDP_ENTRY_POINT(UINT cups_freerdp_printer_client_subsystem_entry(void* arg))
+FREERDP_ENTRY_POINT(UINT VCAPITYPE cups_freerdp_printer_client_subsystem_entry(void* arg))
 {
 	rdpPrinterDriver** ppPrinter = (rdpPrinterDriver**)arg;
 	if (!ppPrinter)

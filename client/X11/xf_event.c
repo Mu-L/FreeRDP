@@ -23,7 +23,11 @@
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 
+#include <string.h>
+#include <math.h>
+
 #include <winpr/assert.h>
+#include <winpr/path.h>
 
 #include <freerdp/log.h>
 #include <freerdp/locale/keyboard.h>
@@ -35,17 +39,20 @@
 #include "xf_input.h"
 #include "xf_gfx.h"
 #include "xf_graphics.h"
+#include "xf_utils.h"
 
 #include "xf_event.h"
-#include "xf_input.h"
 
 #define TAG CLIENT_TAG("x11")
 
 #define CLAMP_COORDINATES(x, y) \
-	if (x < 0)                  \
-		x = 0;                  \
-	if (y < 0)                  \
-	y = 0
+	do                          \
+	{                           \
+		if ((x) < 0)            \
+			(x) = 0;            \
+		if ((y) < 0)            \
+			(y) = 0;            \
+	} while (0)
 
 const char* x11_event_string(int event)
 {
@@ -167,15 +174,28 @@ const char* x11_event_string(int event)
 	} while (0)
 #endif
 
+static BOOL xf_action_script_append(xfContext* xfc, const char* buffer, size_t size, void* user,
+                                    const char* what, const char* arg)
+{
+	WINPR_ASSERT(xfc);
+	WINPR_UNUSED(what);
+	WINPR_UNUSED(arg);
+
+	if (buffer || (size == 0))
+		return TRUE;
+
+	if (!ArrayList_Append(xfc->xevents, buffer))
+	{
+		ArrayList_Clear(xfc->xevents);
+		return FALSE;
+	}
+	return TRUE;
+}
+
 BOOL xf_event_action_script_init(xfContext* xfc)
 {
-	wObject* obj;
-	char* xevent;
-	FILE* actionScript;
-	char buffer[1024] = { 0 };
-	char command[1024] = { 0 };
-	const rdpSettings* settings;
-	const char* ActionScript;
+	wObject* obj = NULL;
+	const rdpSettings* settings = NULL;
 
 	WINPR_ASSERT(xfc);
 
@@ -188,30 +208,13 @@ BOOL xf_event_action_script_init(xfContext* xfc)
 		return FALSE;
 
 	obj = ArrayList_Object(xfc->xevents);
-	obj->fnObjectFree = free;
-	ActionScript = freerdp_settings_get_string(settings, FreeRDP_ActionScript);
-	sprintf_s(command, sizeof(command), "%s xevent", ActionScript);
-	actionScript = popen(command, "r");
+	WINPR_ASSERT(obj);
+	obj->fnObjectNew = winpr_ObjectStringClone;
+	obj->fnObjectFree = winpr_ObjectStringFree;
 
-	if (!actionScript)
+	if (!run_action_script(xfc, "xevent", NULL, xf_action_script_append, NULL))
 		return FALSE;
 
-	while (fgets(buffer, sizeof(buffer), actionScript))
-	{
-		char* context = NULL;
-		strtok_s(buffer, "\n", &context);
-		xevent = _strdup(buffer);
-
-		if (!xevent || !ArrayList_Append(xfc->xevents, xevent))
-		{
-			pclose(actionScript);
-			ArrayList_Free(xfc->xevents);
-			xfc->xevents = NULL;
-			return FALSE;
-		}
-	}
-
-	pclose(actionScript);
 	return TRUE;
 }
 
@@ -224,17 +227,59 @@ void xf_event_action_script_free(xfContext* xfc)
 	}
 }
 
+static BOOL action_script_run(xfContext* xfc, const char* buffer, size_t size, void* user,
+                              const char* what, const char* arg)
+{
+	WINPR_UNUSED(xfc);
+	WINPR_UNUSED(what);
+	WINPR_UNUSED(arg);
+	WINPR_ASSERT(user);
+	int* pstatus = user;
+
+	if (size == 0)
+	{
+		WLog_WARN(TAG, "ActionScript xevent: script did not return data");
+		return FALSE;
+	}
+
+	if (winpr_PathFileExists(buffer))
+	{
+		char* cmd = NULL;
+		size_t cmdlen = 0;
+		winpr_asprintf(&cmd, &cmdlen, "%s %s %s", buffer, what, arg);
+		if (!cmd)
+			return FALSE;
+
+		FILE* fp = popen(cmd, "w");
+		free(cmd);
+		if (!fp)
+		{
+			WLog_ERR(TAG, "Failed to execute '%s'", buffer);
+			return FALSE;
+		}
+
+		*pstatus = pclose(fp);
+		if (*pstatus < 0)
+		{
+			WLog_ERR(TAG, "Command '%s' returned %d", buffer, *pstatus);
+			return FALSE;
+		}
+	}
+	else
+	{
+		WLog_WARN(TAG, "ActionScript xevent: No such file '%s'", buffer);
+		return FALSE;
+	}
+
+	return TRUE;
+}
+
 static BOOL xf_event_execute_action_script(xfContext* xfc, const XEvent* event)
 {
-	int index;
-	int count;
-	char* name;
-	FILE* actionScript;
+	size_t count = 0;
+	char* name = NULL;
 	BOOL match = FALSE;
-	const char* xeventName;
-	const char* ActionScript;
-	char buffer[1024] = { 0 };
-	char command[1024] = { 0 };
+	const char* xeventName = NULL;
 
 	if (!xfc->actionScriptExists || !xfc->xevents || !xfc->window)
 		return FALSE;
@@ -245,7 +290,7 @@ static BOOL xf_event_execute_action_script(xfContext* xfc, const XEvent* event)
 	xeventName = x11_event_string(event->type);
 	count = ArrayList_Count(xfc->xevents);
 
-	for (index = 0; index < count; index++)
+	for (size_t index = 0; index < count; index++)
 	{
 		name = (char*)ArrayList_GetItem(xfc->xevents, index);
 
@@ -259,55 +304,43 @@ static BOOL xf_event_execute_action_script(xfContext* xfc, const XEvent* event)
 	if (!match)
 		return FALSE;
 
-	ActionScript = freerdp_settings_get_string(xfc->common.context.settings, FreeRDP_ActionScript);
-	sprintf_s(command, sizeof(command), "%s xevent %s %lu", ActionScript, xeventName,
-	          (unsigned long)xfc->window->handle);
-	actionScript = popen(command, "r");
-
-	if (!actionScript)
+	char command[2048] = { 0 };
+	char arg[2048] = { 0 };
+	(void)_snprintf(command, sizeof(command), "xevent %s", xeventName);
+	(void)_snprintf(arg, sizeof(arg), "%lu", (unsigned long)xfc->window->handle);
+	if (!run_action_script(xfc, command, arg, action_script_run, NULL))
 		return FALSE;
-
-	while (fgets(buffer, sizeof(buffer), actionScript))
-	{
-		char* context = NULL;
-		strtok_s(buffer, "\n", &context);
-	}
-
-	pclose(actionScript);
 	return TRUE;
 }
 
 void xf_adjust_coordinates_to_screen(xfContext* xfc, UINT32* x, UINT32* y)
 {
-	rdpSettings* settings;
-	INT64 tx, ty;
-
 	if (!xfc || !xfc->common.context.settings || !y || !x)
 		return;
 
-	settings = xfc->common.context.settings;
-	tx = *x;
-	ty = *y;
+	rdpSettings* settings = xfc->common.context.settings;
+	INT64 tx = *x;
+	INT64 ty = *y;
 	if (!xfc->remote_app)
 	{
 #ifdef WITH_XRENDER
 
 		if (xf_picture_transform_required(xfc))
 		{
-			double xScalingFactor = xfc->scaledWidth / (double)freerdp_settings_get_uint32(
-			                                               settings, FreeRDP_DesktopWidth);
-			double yScalingFactor = xfc->scaledHeight / (double)freerdp_settings_get_uint32(
-			                                                settings, FreeRDP_DesktopHeight);
-			tx = ((tx + xfc->offset_x) * xScalingFactor);
-			ty = ((ty + xfc->offset_y) * yScalingFactor);
+			const double dw = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
+			const double dh = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
+			double xScalingFactor = xfc->scaledWidth / dw;
+			double yScalingFactor = xfc->scaledHeight / dh;
+			tx = (INT64)lround((1.0 * (*x) + xfc->offset_x) * xScalingFactor);
+			ty = (INT64)lround((1.0 * (*y) + xfc->offset_y) * yScalingFactor);
 		}
 
 #endif
 	}
 
 	CLAMP_COORDINATES(tx, ty);
-	*x = tx;
-	*y = ty;
+	*x = (UINT32)tx;
+	*y = (UINT32)ty;
 }
 
 void xf_event_adjust_coordinates(xfContext* xfc, int* x, int* y)
@@ -337,9 +370,11 @@ void xf_event_adjust_coordinates(xfContext* xfc, int* x, int* y)
 
 static BOOL xf_event_Expose(xfContext* xfc, const XExposeEvent* event, BOOL app)
 {
-	int x, y;
-	int w, h;
-	rdpSettings* settings;
+	int x = 0;
+	int y = 0;
+	int w = 0;
+	int h = 0;
+	rdpSettings* settings = NULL;
 
 	WINPR_ASSERT(xfc);
 	WINPR_ASSERT(event);
@@ -352,8 +387,10 @@ static BOOL xf_event_Expose(xfContext* xfc, const XExposeEvent* event, BOOL app)
 	{
 		x = 0;
 		y = 0;
-		w = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
-		h = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
+		w = WINPR_ASSERTING_INT_CAST(int,
+		                             freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth));
+		h = WINPR_ASSERTING_INT_CAST(int,
+		                             freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight));
 	}
 	else
 	{
@@ -367,7 +404,9 @@ static BOOL xf_event_Expose(xfContext* xfc, const XExposeEvent* event, BOOL app)
 	{
 		if (xfc->common.context.gdi->gfx)
 		{
-			xf_OutputExpose(xfc, x, y, w, h);
+			xf_OutputExpose(
+			    xfc, WINPR_ASSERTING_INT_CAST(uint32_t, x), WINPR_ASSERTING_INT_CAST(uint32_t, y),
+			    WINPR_ASSERTING_INT_CAST(uint32_t, w), WINPR_ASSERTING_INT_CAST(uint32_t, h));
 			return TRUE;
 		}
 		xf_draw_screen(xfc, x, y, w, h);
@@ -397,9 +436,6 @@ BOOL xf_generic_MotionNotify(xfContext* xfc, int x, int y, int state, Window win
 
 	WINPR_ASSERT(xfc);
 	WINPR_ASSERT(xfc->common.context.settings);
-
-	rdpInput* input = xfc->common.context.input;
-	WINPR_ASSERT(input);
 
 	if (!freerdp_settings_get_bool(xfc->common.context.settings, FreeRDP_MouseMotion))
 	{
@@ -446,13 +482,15 @@ static BOOL xf_event_MotionNotify(xfContext* xfc, const XMotionEvent* event, BOO
 {
 	WINPR_ASSERT(xfc);
 
-	if (xfc->xi_event)
-		return TRUE;
-
 	if (xfc->window)
 		xf_floatbar_set_root_y(xfc->window->floatbar, event->y);
 
-	return xf_generic_MotionNotify(xfc, event->x, event->y, event->state, event->window, app);
+	if (xfc->xi_event ||
+	    (xfc->common.mouse_grabbed && freerdp_client_use_relative_mouse_events(&xfc->common)))
+		return TRUE;
+
+	return xf_generic_MotionNotify(xfc, event->x, event->y,
+	                               WINPR_ASSERTING_INT_CAST(int, event->state), event->window, app);
 }
 
 BOOL xf_generic_ButtonEvent(xfContext* xfc, int x, int y, int button, Window window, BOOL app,
@@ -462,12 +500,14 @@ BOOL xf_generic_ButtonEvent(xfContext* xfc, int x, int y, int button, Window win
 	Window childWindow = None;
 
 	WINPR_ASSERT(xfc);
+	if (button < 0)
+		return FALSE;
 
 	for (size_t i = 0; i < ARRAYSIZE(xfc->button_map); i++)
 	{
 		const button_map* cur = &xfc->button_map[i];
 
-		if (cur->button == button)
+		if (cur->button == (UINT32)button)
 		{
 			flags = cur->flags;
 			break;
@@ -555,18 +595,23 @@ static BOOL xf_event_ButtonPress(xfContext* xfc, const XButtonEvent* event, BOOL
 {
 	xf_grab_mouse(xfc);
 
-	if (xfc->xi_event)
+	if (xfc->xi_event ||
+	    (xfc->common.mouse_grabbed && freerdp_client_use_relative_mouse_events(&xfc->common)))
 		return TRUE;
-	return xf_generic_ButtonEvent(xfc, event->x, event->y, event->button, event->window, app, TRUE);
+	return xf_generic_ButtonEvent(xfc, event->x, event->y,
+	                              WINPR_ASSERTING_INT_CAST(int, event->button), event->window, app,
+	                              TRUE);
 }
 
 static BOOL xf_event_ButtonRelease(xfContext* xfc, const XButtonEvent* event, BOOL app)
 {
 	xf_grab_mouse(xfc);
 
-	if (xfc->xi_event)
+	if (xfc->xi_event ||
+	    (xfc->common.mouse_grabbed && freerdp_client_use_relative_mouse_events(&xfc->common)))
 		return TRUE;
-	return xf_generic_ButtonEvent(xfc, event->x, event->y, event->button, event->window, app,
+	return xf_generic_ButtonEvent(xfc, event->x, event->y,
+	                              WINPR_ASSERTING_INT_CAST(int, event->button), event->window, app,
 	                              FALSE);
 }
 
@@ -644,6 +689,8 @@ static BOOL xf_event_FocusIn(xfContext* xfc, const XFocusInEvent* event, BOOL ap
 	 * if the WM decided to use an alternate event order */
 	if (!app)
 		xf_keyboard_release_all_keypress(xfc);
+	else
+		xf_rail_send_activate(xfc, event->window, TRUE);
 
 	xf_pointer_update_scale(xfc);
 
@@ -672,6 +719,8 @@ static BOOL xf_event_FocusOut(xfContext* xfc, const XFocusOutEvent* event, BOOL 
 		XUngrabKeyboard(xfc->display, CurrentTime);
 
 	xf_keyboard_release_all_keypress(xfc);
+	if (app)
+		xf_rail_send_activate(xfc, event->window, FALSE);
 
 	return TRUE;
 }
@@ -696,7 +745,7 @@ static BOOL xf_event_ClientMessage(xfContext* xfc, const XClientMessageEvent* ev
 			xfAppWindow* appWindow = xf_AppWindowFromX11Window(xfc, event->window);
 
 			if (appWindow)
-				xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_CLOSE);
+				return xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_CLOSE);
 
 			return TRUE;
 		}
@@ -794,14 +843,19 @@ static BOOL xf_event_ConfigureNotify(xfContext* xfc, const XConfigureEvent* even
 			{
 				xfc->scaledWidth = xfc->window->width;
 				xfc->scaledHeight = xfc->window->height;
-				xf_draw_screen(xfc, 0, 0,
-				               freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
-				               freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight));
+				xf_draw_screen(
+				    xfc, 0, 0,
+				    WINPR_ASSERTING_INT_CAST(
+				        int32_t, freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth)),
+				    WINPR_ASSERTING_INT_CAST(
+				        int32_t, freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight)));
 			}
 			else
 			{
-				xfc->scaledWidth = freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth);
-				xfc->scaledHeight = freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight);
+				xfc->scaledWidth = WINPR_ASSERTING_INT_CAST(
+				    int, freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth));
+				xfc->scaledHeight = WINPR_ASSERTING_INT_CAST(
+				    int, freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight));
 			}
 
 #endif
@@ -809,7 +863,8 @@ static BOOL xf_event_ConfigureNotify(xfContext* xfc, const XConfigureEvent* even
 
 		if (freerdp_settings_get_bool(settings, FreeRDP_DynamicResolutionUpdate))
 		{
-			int alignedWidth, alignedHeight;
+			int alignedWidth = 0;
+			int alignedHeight = 0;
 			alignedWidth = (xfc->window->width / 2) * 2;
 			alignedHeight = (xfc->window->height / 2) * 2;
 			/* ask the server to resize using the display channel */
@@ -910,10 +965,9 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 	 * when the window has been minimized, maximized, restored locally
 	 * ie. not using the buttons on the rail window itself
 	 */
-	if ((((Atom)event->atom == xfc->_NET_WM_STATE) && (event->state != PropertyDelete)) ||
-	    (((Atom)event->atom == xfc->WM_STATE) && (event->state != PropertyDelete)))
+	if (((event->atom == xfc->_NET_WM_STATE) && (event->state != PropertyDelete)) ||
+	    ((event->atom == xfc->WM_STATE) && (event->state != PropertyDelete)))
 	{
-		unsigned long i = 0;
 		BOOL status = FALSE;
 		BOOL minimized = FALSE;
 		BOOL minimizedChanged = FALSE;
@@ -930,7 +984,7 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 				return TRUE;
 		}
 
-		if ((Atom)event->atom == xfc->_NET_WM_STATE)
+		if (event->atom == xfc->_NET_WM_STATE)
 		{
 			status = xf_GetWindowProperty(xfc, event->window, xfc->_NET_WM_STATE, 12, &nitems,
 			                              &bytes, &prop);
@@ -942,17 +996,19 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 					appWindow->maxVert = FALSE;
 					appWindow->maxHorz = FALSE;
 				}
-				for (i = 0; i < nitems; i++)
+				for (unsigned long i = 0; i < nitems; i++)
 				{
 					if ((Atom)((UINT16**)prop)[i] ==
-					    XInternAtom(xfc->display, "_NET_WM_STATE_MAXIMIZED_VERT", False))
+					    Logging_XInternAtom(xfc->log, xfc->display, "_NET_WM_STATE_MAXIMIZED_VERT",
+					                        False))
 					{
 						if (appWindow)
 							appWindow->maxVert = TRUE;
 					}
 
 					if ((Atom)((UINT16**)prop)[i] ==
-					    XInternAtom(xfc->display, "_NET_WM_STATE_MAXIMIZED_HORZ", False))
+					    Logging_XInternAtom(xfc->log, xfc->display, "_NET_WM_STATE_MAXIMIZED_HORZ",
+					                        False))
 					{
 						if (appWindow)
 							appWindow->maxHorz = TRUE;
@@ -963,7 +1019,7 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 			}
 		}
 
-		if ((Atom)event->atom == xfc->WM_STATE)
+		if (event->atom == xfc->WM_STATE)
 		{
 			status =
 			    xf_GetWindowProperty(xfc, event->window, xfc->WM_STATE, 1, &nitems, &bytes, &prop);
@@ -971,7 +1027,7 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 			if (status)
 			{
 				/* If the window is in the iconic state */
-				if (((UINT32)*prop == 3))
+				if (((UINT32)*prop == 3) && !IsGnome())
 				{
 					minimized = TRUE;
 					if (appWindow)
@@ -997,7 +1053,8 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 				if (appWindow->rail_state != WINDOW_SHOW_MAXIMIZED)
 				{
 					appWindow->rail_state = WINDOW_SHOW_MAXIMIZED;
-					xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_MAXIMIZE);
+					return xf_rail_send_client_system_command(xfc, appWindow->windowId,
+					                                          SC_MAXIMIZE);
 				}
 			}
 			else if (appWindow->minimized)
@@ -1005,7 +1062,8 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 				if (appWindow->rail_state != WINDOW_SHOW_MINIMIZED)
 				{
 					appWindow->rail_state = WINDOW_SHOW_MINIMIZED;
-					xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_MINIMIZE);
+					return xf_rail_send_client_system_command(xfc, appWindow->windowId,
+					                                          SC_MINIMIZE);
 				}
 			}
 			else
@@ -1013,7 +1071,7 @@ static BOOL xf_event_PropertyNotify(xfContext* xfc, const XPropertyEvent* event,
 				if (appWindow->rail_state != WINDOW_SHOW && appWindow->rail_state != WINDOW_HIDE)
 				{
 					appWindow->rail_state = WINDOW_SHOW;
-					xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_RESTORE);
+					return xf_rail_send_client_system_command(xfc, appWindow->windowId, SC_RESTORE);
 				}
 			}
 		}
@@ -1107,6 +1165,8 @@ static BOOL xf_event_suppress_events(xfContext* xfc, xfAppWindow* appWindow, con
 
 		case LMS_TERMINATING:
 			/* Already sent RDP end move to server. Allow events to pass. */
+			break;
+		default:
 			break;
 	}
 
@@ -1263,16 +1323,15 @@ BOOL xf_event_process(freerdp* instance, const XEvent* event)
 BOOL xf_generic_RawButtonEvent(xfContext* xfc, int button, BOOL app, BOOL down)
 {
 	UINT16 flags = 0;
-	size_t i;
 
-	if (app)
+	if (app || (button < 0))
 		return FALSE;
 
-	for (i = 0; i < ARRAYSIZE(xfc->button_map); i++)
+	for (size_t i = 0; i < ARRAYSIZE(xfc->button_map); i++)
 	{
 		const button_map* cur = &xfc->button_map[i];
 
-		if (cur->button == button)
+		if (cur->button == (UINT32)button)
 		{
 			flags = cur->flags;
 			break;

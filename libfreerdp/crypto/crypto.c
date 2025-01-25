@@ -55,15 +55,15 @@ static SSIZE_T crypto_rsa_common(const BYTE* input, size_t length, UINT32 key_le
 	if (!input || !modulus || !exponent || !output)
 		return -1;
 
-	if ((size_t)exponent_size > INT_MAX / 2)
+	if (exponent_size > INT_MAX / 2)
 		return -1;
 
 	if (key_length >= INT_MAX / 2 - exponent_size)
 		return -1;
 
 	bufferSize = 2ULL * key_length + exponent_size;
-	if ((size_t)length > bufferSize)
-		bufferSize = (size_t)length;
+	if (length > bufferSize)
+		bufferSize = length;
 
 	input_reverse = (BYTE*)calloc(bufferSize, 1);
 
@@ -94,25 +94,25 @@ static SSIZE_T crypto_rsa_common(const BYTE* input, size_t length, UINT32 key_le
 	if (!(y = BN_new()))
 		goto fail;
 
-	if (!BN_bin2bn(modulus_reverse, key_length, mod))
+	if (!BN_bin2bn(modulus_reverse, (int)key_length, mod))
 		goto fail;
 
-	if (!BN_bin2bn(exponent_reverse, exponent_size, exp))
+	if (!BN_bin2bn(exponent_reverse, (int)exponent_size, exp))
 		goto fail;
-	if (!BN_bin2bn(input_reverse, length, x))
+	if (!BN_bin2bn(input_reverse, (int)length, x))
 		goto fail;
 	if (BN_mod_exp(y, x, exp, mod, ctx) != 1)
 		goto fail;
 	output_length = BN_bn2bin(y, output);
 	if (output_length < 0)
 		goto fail;
-	if ((size_t)output_length > out_length)
+	if (WINPR_ASSERTING_INT_CAST(size_t, output_length) > out_length)
 		goto fail;
-	crypto_reverse(output, output_length);
+	crypto_reverse(output, WINPR_ASSERTING_INT_CAST(size_t, output_length));
 
 	if ((size_t)output_length < key_length)
 	{
-		size_t diff = key_length - output_length;
+		size_t diff = key_length - WINPR_ASSERTING_INT_CAST(size_t, output_length);
 		if ((size_t)output_length + diff > out_length)
 			diff = out_length - (size_t)output_length;
 		memset(output + output_length, 0, diff);
@@ -175,12 +175,10 @@ SSIZE_T crypto_rsa_private_decrypt(const BYTE* input, size_t length, const rdpPr
 
 void crypto_reverse(BYTE* data, size_t length)
 {
-	size_t i, j;
-
 	if (length < 1)
 		return;
 
-	for (i = 0, j = length - 1; i < j; i++, j--)
+	for (size_t i = 0, j = length - 1; i < j; i++, j--)
 	{
 		const BYTE temp = data[i];
 		data[i] = data[j];
@@ -188,7 +186,7 @@ void crypto_reverse(BYTE* data, size_t length)
 	}
 }
 
-char* crypto_read_pem(const char* filename, size_t* plength)
+char* crypto_read_pem(const char* WINPR_RESTRICT filename, size_t* WINPR_RESTRICT plength)
 {
 	char* pem = NULL;
 	FILE* fp = NULL;
@@ -211,7 +209,7 @@ char* crypto_read_pem(const char* filename, size_t* plength)
 	if (rc < 0)
 		goto fail;
 
-	pem = calloc(size + 1, sizeof(char));
+	pem = calloc(WINPR_ASSERTING_INT_CAST(size_t, size) + 1, sizeof(char));
 	if (!pem)
 		goto fail;
 
@@ -220,8 +218,8 @@ char* crypto_read_pem(const char* filename, size_t* plength)
 		goto fail;
 
 	if (plength)
-		*plength = (size_t)strnlen(pem, size);
-	fclose(fp);
+		*plength = strnlen(pem, WINPR_ASSERTING_INT_CAST(size_t, size));
+	(void)fclose(fp);
 	return pem;
 
 fail:
@@ -231,12 +229,13 @@ fail:
 	          winpr_strerror(errno, buffer, sizeof(buffer)));
 }
 	if (fp)
-		fclose(fp);
+		(void)fclose(fp);
 	free(pem);
 	return NULL;
 }
 
-BOOL crypto_write_pem(const char* filename, const char* pem, size_t length)
+BOOL crypto_write_pem(const char* WINPR_RESTRICT filename, const char* WINPR_RESTRICT pem,
+                      size_t length)
 {
 	WINPR_ASSERT(filename);
 	WINPR_ASSERT(pem || (length == 0));
@@ -250,7 +249,7 @@ BOOL crypto_write_pem(const char* filename, const char* pem, size_t length)
 	if (!fp)
 		goto fail;
 	rc = fwrite(pem, 1, size, fp);
-	fclose(fp);
+	(void)fclose(fp);
 fail:
 	if (rc == 0)
 	{

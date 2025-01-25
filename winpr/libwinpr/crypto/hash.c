@@ -230,7 +230,7 @@ BOOL winpr_HMAC_Init(WINPR_HMAC_CTX* ctx, WINPR_MD_TYPE md, const void* key, siz
 
 #if defined(WITH_OPENSSL)
 #if OPENSSL_VERSION_NUMBER >= 0x30000000L
-	const char* hash = winpr_md_type_to_string(md);
+	char* hash = WINPR_CAST_CONST_PTR_AWAY(winpr_md_type_to_string(md), char*);
 
 	if (!ctx->xhmac)
 		return FALSE;
@@ -531,24 +531,37 @@ BOOL winpr_Digest_Init_Allow_FIPS(WINPR_DIGEST_CTX* ctx, WINPR_MD_TYPE md)
 {
 	WINPR_ASSERT(ctx);
 
-#if defined(WITH_OPENSSL)
-	const EVP_MD* evp = winpr_openssl_get_evp_md(md);
-
-	/* Only MD5 is supported for FIPS allow override */
-	if (md != WINPR_MD_MD5)
+	ctx->md = md;
+	switch (md)
 	{
-		WLog_ERR(TAG, "Invalid FIPS digest %s requested", winpr_md_type_to_string(md));
-		return FALSE;
+		case WINPR_MD_MD5:
+#if defined(WITH_INTERNAL_MD5)
+			winpr_MD5_Init(&ctx->md5);
+			return TRUE;
+#else
+			break;
+#endif
+		default:
+			WLog_ERR(TAG, "Invalid FIPS digest %s requested", winpr_md_type_to_string(md));
+			return FALSE;
 	}
 
+#if defined(WITH_OPENSSL)
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L
+#if !defined(WITH_INTERNAL_MD5)
+	if (md == WINPR_MD_MD5)
+	{
+		EVP_MD* md5 = EVP_MD_fetch(NULL, "MD5", "fips=no");
+		BOOL rc = winpr_Digest_Init_Internal(ctx, md5);
+		EVP_MD_free(md5);
+		return rc;
+	}
+#endif
+#endif
+	const EVP_MD* evp = winpr_openssl_get_evp_md(md);
 	EVP_MD_CTX_set_flags(ctx->mdctx, EVP_MD_CTX_FLAG_NON_FIPS_ALLOW);
 	return winpr_Digest_Init_Internal(ctx, evp);
 #elif defined(WITH_MBEDTLS)
-
-	/* Only MD5 is supported for FIPS allow override */
-	if (md != WINPR_MD_MD5)
-		return FALSE;
-
 	return winpr_Digest_Init_Internal(ctx, md);
 #endif
 }
@@ -659,15 +672,12 @@ BOOL winpr_Digest_Final(WINPR_DIGEST_CTX* ctx, void* output, size_t olen)
 	return FALSE;
 }
 
-BOOL winpr_DigestSign_Init(WINPR_DIGEST_CTX* ctx, WINPR_MD_TYPE digest, void* key)
+BOOL winpr_DigestSign_Init(WINPR_DIGEST_CTX* ctx, WINPR_MD_TYPE md, void* key)
 {
 	WINPR_ASSERT(ctx);
 
-	const char* hash = winpr_md_type_to_string(digest);
-	WINPR_ASSERT(hash);
-
 #if defined(WITH_OPENSSL)
-	const EVP_MD* evp = EVP_get_digestbyname(hash);
+	const EVP_MD* evp = winpr_openssl_get_evp_md(md);
 	if (!evp)
 		return FALSE;
 

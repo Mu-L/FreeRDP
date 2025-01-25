@@ -29,30 +29,27 @@
 
 static void crypto_print_name(const BYTE* b, DWORD sz)
 {
-	X509_NAME* name;
-	X509* x509;
-	BIO* bio;
-	char* ret;
-
-	bio = BIO_new_mem_buf(b, sz);
+	if (sz > INT32_MAX)
+		return;
+	BIO* bio = BIO_new_mem_buf(b, (int)sz);
 	if (!bio)
 		return;
 
-	x509 = d2i_X509_bio(bio, NULL);
+	X509* x509 = d2i_X509_bio(bio, NULL);
 	if (!x509)
 		goto bio_release;
 
-	name = X509_get_subject_name(x509);
+	X509_NAME* name = X509_get_subject_name(x509);
 	if (!name)
 		goto x509_release;
 
-	ret = malloc(1024);
+	char* ret = calloc(1024, sizeof(char));
 	if (!ret)
 		goto bio_release;
 
-	ret = X509_NAME_oneline(name, ret, 1024);
+	char* ret2 = X509_NAME_oneline(name, ret, 1024);
 
-	printf("\t%s\n", ret);
+	printf("\t%s\n", ret2);
 	free(ret);
 
 x509_release:
@@ -63,19 +60,21 @@ bio_release:
 
 int TestNCryptSmartcard(int argc, char* argv[])
 {
-	SECURITY_STATUS status;
-	size_t j = 0;
-	DWORD providerCount;
+	int rc = -1;
+	DWORD providerCount = 0;
 	NCryptProviderName* names = NULL;
 
-	status = NCryptEnumStorageProviders(&providerCount, &names, NCRYPT_SILENT_FLAG);
+	WINPR_UNUSED(argc);
+	WINPR_UNUSED(argv);
+
+	SECURITY_STATUS status = NCryptEnumStorageProviders(&providerCount, &names, NCRYPT_SILENT_FLAG);
 	if (status != ERROR_SUCCESS)
 		return -1;
 
-	for (j = 0; j < providerCount; j++)
+	for (size_t j = 0; j < providerCount; j++)
 	{
 		const NCryptProviderName* name = &names[j];
-		NCRYPT_PROV_HANDLE provider;
+		NCRYPT_PROV_HANDLE provider = 0;
 		char providerNameStr[256] = { 0 };
 		PVOID enumState = NULL;
 		size_t i = 0;
@@ -92,8 +91,9 @@ int TestNCryptSmartcard(int argc, char* argv[])
 		while ((status = NCryptEnumKeys(provider, NULL, &keyName, &enumState,
 		                                NCRYPT_SILENT_FLAG)) == ERROR_SUCCESS)
 		{
-			NCRYPT_KEY_HANDLE phKey;
-			DWORD dwFlags = 0, cbOutput;
+			NCRYPT_KEY_HANDLE phKey = 0;
+			DWORD dwFlags = 0;
+			DWORD cbOutput = 0;
 			char keyNameStr[256] = { 0 };
 			WCHAR reader[1024] = { 0 };
 			PBYTE certBytes = NULL;
@@ -116,7 +116,7 @@ int TestNCryptSmartcard(int argc, char* argv[])
 			{
 				char readerStr[1024] = { 0 };
 
-				ConvertWCharNToUtf8(reader, cbOutput, readerStr, ARRAYSIZE(readerStr));
+				(void)ConvertWCharNToUtf8(reader, cbOutput, readerStr, ARRAYSIZE(readerStr));
 				printf("\treader: %s\n", readerStr);
 			}
 
@@ -149,8 +149,16 @@ int TestNCryptSmartcard(int argc, char* argv[])
 
 		NCryptFreeBuffer(enumState);
 		NCryptFreeObject((NCRYPT_HANDLE)provider);
+
+		if (status != NTE_NO_MORE_ITEMS)
+		{
+			(void)fprintf(stderr, "NCryptEnumKeys returned %s [0x%08" PRIx32 "]\n",
+			              Win32ErrorCode2Tag(status), status);
+		}
 	}
 
+	rc = 0;
+fail:
 	NCryptFreeBuffer(names);
-	return 0;
+	return rc;
 }

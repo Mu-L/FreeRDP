@@ -17,6 +17,8 @@
  * limitations under the License.
  */
 
+#include <winpr/cast.h>
+
 #include <freerdp/config.h>
 
 #include <freerdp/freerdp.h>
@@ -74,10 +76,10 @@ static UINT enumerator_server_open_channel(enumerator_server* enumerator)
 {
 	CamDevEnumServerContext* context = &enumerator->context;
 	DWORD Error = ERROR_SUCCESS;
-	HANDLE hEvent;
+	HANDLE hEvent = NULL;
 	DWORD BytesReturned = 0;
 	PULONG pSessionId = NULL;
-	UINT32 channelId;
+	UINT32 channelId = 0;
 	BOOL status = TRUE;
 
 	WINPR_ASSERT(enumerator);
@@ -171,7 +173,7 @@ static UINT enumerator_server_recv_device_added_notification(CamDevEnumServerCon
 
 	/* Search for null terminator of DeviceName */
 	size_t i = 0;
-	for (i = 0; i < remaining_length; i += sizeof(WCHAR), ++channel_name_start)
+	for (; i < remaining_length; i += sizeof(WCHAR), ++channel_name_start)
 	{
 		if (*channel_name_start == L'\0')
 			break;
@@ -257,11 +259,11 @@ static UINT enumerator_server_recv_device_removed_notification(CamDevEnumServerC
 
 static UINT enumerator_process_message(enumerator_server* enumerator)
 {
-	BOOL rc;
+	BOOL rc = 0;
 	UINT error = ERROR_INTERNAL_ERROR;
-	ULONG BytesReturned;
+	ULONG BytesReturned = 0;
 	CAM_SHARED_MSG_HEADER header = { 0 };
-	wStream* s;
+	wStream* s = NULL;
 
 	WINPR_ASSERT(enumerator);
 	WINPR_ASSERT(enumerator->enumerator_channel);
@@ -287,7 +289,7 @@ static UINT enumerator_process_message(enumerator_server* enumerator)
 		goto out;
 	}
 
-	if (WTSVirtualChannelRead(enumerator->enumerator_channel, 0, (PCHAR)Stream_Buffer(s),
+	if (WTSVirtualChannelRead(enumerator->enumerator_channel, 0, Stream_BufferAs(s, char),
 	                          (ULONG)Stream_Capacity(s), &BytesReturned) == FALSE)
 	{
 		WLog_ERR(TAG, "WTSVirtualChannelRead failed!");
@@ -348,6 +350,8 @@ static UINT enumerator_server_context_poll_int(CamDevEnumServerContext* context)
 		case ENUMERATOR_OPENED:
 			error = enumerator_process_message(enumerator);
 			break;
+		default:
+			break;
 	}
 
 	return error;
@@ -365,7 +369,7 @@ static HANDLE enumerator_server_get_channel_handle(enumerator_server* enumerator
 	                           &BytesReturned) == TRUE)
 	{
 		if (BytesReturned == sizeof(HANDLE))
-			CopyMemory(&ChannelEvent, buffer, sizeof(HANDLE));
+			ChannelEvent = *(HANDLE*)buffer;
 
 		WTSFreeMemory(buffer);
 	}
@@ -375,11 +379,11 @@ static HANDLE enumerator_server_get_channel_handle(enumerator_server* enumerator
 
 static DWORD WINAPI enumerator_server_thread_func(LPVOID arg)
 {
-	DWORD nCount;
+	DWORD nCount = 0;
 	HANDLE events[2] = { 0 };
 	enumerator_server* enumerator = (enumerator_server*)arg;
 	UINT error = CHANNEL_RC_OK;
-	DWORD status;
+	DWORD status = 0;
 
 	WINPR_ASSERT(enumerator);
 
@@ -415,10 +419,12 @@ static DWORD WINAPI enumerator_server_thread_func(LPVOID arg)
 						break;
 				}
 				break;
+			default:
+				break;
 		}
 	}
 
-	WTSVirtualChannelClose(enumerator->enumerator_channel);
+	(void)WTSVirtualChannelClose(enumerator->enumerator_channel);
 	enumerator->enumerator_channel = NULL;
 
 	if (error && enumerator->context.rdpcontext)
@@ -449,7 +455,7 @@ static UINT enumerator_server_open(CamDevEnumServerContext* context)
 		if (!enumerator->thread)
 		{
 			WLog_ERR(TAG, "CreateThread failed!");
-			CloseHandle(enumerator->stopEvent);
+			(void)CloseHandle(enumerator->stopEvent);
 			enumerator->stopEvent = NULL;
 			return ERROR_INTERNAL_ERROR;
 		}
@@ -468,7 +474,7 @@ static UINT enumerator_server_close(CamDevEnumServerContext* context)
 
 	if (!enumerator->externalThread && enumerator->thread)
 	{
-		SetEvent(enumerator->stopEvent);
+		(void)SetEvent(enumerator->stopEvent);
 
 		if (WaitForSingleObject(enumerator->thread, INFINITE) == WAIT_FAILED)
 		{
@@ -477,8 +483,8 @@ static UINT enumerator_server_close(CamDevEnumServerContext* context)
 			return error;
 		}
 
-		CloseHandle(enumerator->thread);
-		CloseHandle(enumerator->stopEvent);
+		(void)CloseHandle(enumerator->thread);
+		(void)CloseHandle(enumerator->stopEvent);
 		enumerator->thread = NULL;
 		enumerator->stopEvent = NULL;
 	}
@@ -486,7 +492,7 @@ static UINT enumerator_server_close(CamDevEnumServerContext* context)
 	{
 		if (enumerator->state != ENUMERATOR_INITIAL)
 		{
-			WTSVirtualChannelClose(enumerator->enumerator_channel);
+			(void)WTSVirtualChannelClose(enumerator->enumerator_channel);
 			enumerator->enumerator_channel = NULL;
 			enumerator->state = ENUMERATOR_INITIAL;
 		}
@@ -529,10 +535,12 @@ static UINT enumerator_server_packet_send(CamDevEnumServerContext* context, wStr
 {
 	enumerator_server* enumerator = (enumerator_server*)context;
 	UINT error = CHANNEL_RC_OK;
-	ULONG written;
+	ULONG written = 0;
 
-	if (!WTSVirtualChannelWrite(enumerator->enumerator_channel, (PCHAR)Stream_Buffer(s),
-	                            Stream_GetPosition(s), &written))
+	const size_t len = Stream_GetPosition(s);
+	WINPR_ASSERT(len <= UINT32_MAX);
+	if (!WTSVirtualChannelWrite(enumerator->enumerator_channel, Stream_BufferAs(s, char),
+	                            (UINT32)len, &written))
 	{
 		WLog_ERR(TAG, "WTSVirtualChannelWrite failed!");
 		error = ERROR_INTERNAL_ERROR;
@@ -553,7 +561,7 @@ out:
 static UINT enumerator_send_select_version_response_pdu(
     CamDevEnumServerContext* context, const CAM_SELECT_VERSION_RESPONSE* selectVersionResponse)
 {
-	wStream* s;
+	wStream* s = NULL;
 
 	s = Stream_New(NULL, CAM_HEADER_SIZE);
 	if (!s)
@@ -563,7 +571,8 @@ static UINT enumerator_send_select_version_response_pdu(
 	}
 
 	Stream_Write_UINT8(s, selectVersionResponse->Header.Version);
-	Stream_Write_UINT8(s, selectVersionResponse->Header.MessageId);
+	Stream_Write_UINT8(s,
+	                   WINPR_ASSERTING_INT_CAST(uint8_t, selectVersionResponse->Header.MessageId));
 
 	return enumerator_server_packet_send(context, s);
 }

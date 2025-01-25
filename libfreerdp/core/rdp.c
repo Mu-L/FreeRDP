@@ -26,6 +26,8 @@
 #include <winpr/string.h>
 #include <winpr/synch.h>
 #include <winpr/assert.h>
+#include <winpr/cast.h>
+#include <winpr/json.h>
 
 #include "rdp.h"
 
@@ -41,6 +43,14 @@
 #include <freerdp/buildflags.h>
 
 #define RDP_TAG FREERDP_TAG("core.rdp")
+
+typedef struct
+{
+	const char* file;
+	const char* fkt;
+	size_t line;
+	DWORD level;
+} log_line_t;
 
 static const char* DATA_PDU_TYPE_STRINGS[80] = {
 	"?",
@@ -161,9 +171,9 @@ const char* data_pdu_type_to_string(UINT8 type)
 }
 
 static BOOL rdp_read_flow_control_pdu(rdpRdp* rdp, wStream* s, UINT16* type, UINT16* channel_id);
-static BOOL rdp_write_share_control_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 type,
+static BOOL rdp_write_share_control_header(rdpRdp* rdp, wStream* s, size_t length, UINT16 type,
                                            UINT16 channel_id);
-static BOOL rdp_write_share_data_header(rdpRdp* rdp, wStream* s, UINT16 length, BYTE type,
+static BOOL rdp_write_share_data_header(rdpRdp* rdp, wStream* s, size_t length, BYTE type,
                                         UINT32 share_id);
 
 /**
@@ -260,7 +270,8 @@ BOOL rdp_read_share_control_header(rdpRdp* rdp, wStream* s, UINT16* tpktLength,
 		char buffer[128] = { 0 };
 		WLog_Print(rdp->log, WLOG_DEBUG,
 		           "[Flow control PDU] type=%s, tpktLength=%" PRIuz ", remainingLength=%" PRIuz,
-		           pdu_type_to_str(*type, buffer, sizeof(buffer)), *tpktLength, *remainingLength);
+		           pdu_type_to_str(*type, buffer, sizeof(buffer)), tpktLength ? *tpktLength : 0,
+		           remainingLength ? *remainingLength : 0);
 		return TRUE;
 	}
 
@@ -296,15 +307,20 @@ BOOL rdp_read_share_control_header(rdpRdp* rdp, wStream* s, UINT16* tpktLength,
 	WLog_Print(rdp->log, WLOG_DEBUG, "type=%s, tpktLength=%" PRIuz ", remainingLength=%" PRIuz,
 	           pdu_type_to_str(*type, buffer, sizeof(buffer)), len, remLen);
 	if (remainingLength)
-		*remainingLength = remLen;
+	{
+		WINPR_ASSERT(remLen <= UINT16_MAX);
+		*remainingLength = (UINT16)remLen;
+	}
 	return Stream_CheckAndLogRequiredLengthWLog(rdp->log, s, remLen);
 }
 
-BOOL rdp_write_share_control_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 type,
+BOOL rdp_write_share_control_header(rdpRdp* rdp, wStream* s, size_t length, UINT16 type,
                                     UINT16 channel_id)
 {
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(rdp);
+	if (length > UINT16_MAX)
+		return FALSE;
 
 	if (length < RDP_PACKET_HEADER_MAX_LENGTH)
 		return FALSE;
@@ -312,9 +328,9 @@ BOOL rdp_write_share_control_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT
 		return FALSE;
 	length -= RDP_PACKET_HEADER_MAX_LENGTH;
 	/* Share Control Header */
-	Stream_Write_UINT16(s, length);      /* totalLength */
-	Stream_Write_UINT16(s, type | 0x10); /* pduType */
-	Stream_Write_UINT16(s, channel_id);  /* pduSource */
+	Stream_Write_UINT16(s, WINPR_ASSERTING_INT_CAST(uint16_t, length));      /* totalLength */
+	Stream_Write_UINT16(s, WINPR_ASSERTING_INT_CAST(uint16_t, type | 0x10)); /* pduType */
+	Stream_Write_UINT16(s, WINPR_ASSERTING_INT_CAST(uint16_t, channel_id));  /* pduSource */
 	return TRUE;
 }
 
@@ -338,13 +354,15 @@ BOOL rdp_read_share_data_header(rdpRdp* rdp, wStream* s, UINT16* length, BYTE* t
 	return TRUE;
 }
 
-BOOL rdp_write_share_data_header(rdpRdp* rdp, wStream* s, UINT16 length, BYTE type, UINT32 share_id)
+BOOL rdp_write_share_data_header(rdpRdp* rdp, wStream* s, size_t length, BYTE type, UINT32 share_id)
 {
 	const size_t headerLen = RDP_PACKET_HEADER_MAX_LENGTH + RDP_SHARE_CONTROL_HEADER_LENGTH +
 	                         RDP_SHARE_DATA_HEADER_LENGTH;
 
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(rdp);
+	if (length > UINT16_MAX)
+		return FALSE;
 
 	if (length < headerLen)
 		return FALSE;
@@ -356,7 +374,8 @@ BOOL rdp_write_share_data_header(rdpRdp* rdp, wStream* s, UINT16 length, BYTE ty
 	Stream_Write_UINT32(s, share_id);  /* shareId (4 bytes) */
 	Stream_Write_UINT8(s, 0);          /* pad1 (1 byte) */
 	Stream_Write_UINT8(s, STREAM_LOW); /* streamId (1 byte) */
-	Stream_Write_UINT16(s, length);    /* uncompressedLength (2 bytes) */
+	Stream_Write_UINT16(
+	    s, WINPR_ASSERTING_INT_CAST(uint16_t, length)); /* uncompressedLength (2 bytes) */
 	Stream_Write_UINT8(s, type);       /* pduType2, Data PDU Type (1 byte) */
 	Stream_Write_UINT8(s, 0);          /* compressedType (1 byte) */
 	Stream_Write_UINT16(s, 0);         /* compressedLength (2 bytes) */
@@ -395,7 +414,7 @@ static BOOL rdp_security_stream_init(rdpRdp* rdp, wStream* s, BOOL sec_header)
 
 wStream* rdp_send_stream_init(rdpRdp* rdp)
 {
-	wStream* s;
+	wStream* s = NULL;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->transport);
@@ -487,7 +506,7 @@ BOOL rdp_set_error_info(rdpRdp* rdp, UINT32 errorInfo)
 
 wStream* rdp_message_channel_pdu_init(rdpRdp* rdp)
 {
-	wStream* s;
+	wStream* s = NULL;
 
 	WINPR_ASSERT(rdp);
 
@@ -520,19 +539,16 @@ fail:
 
 BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
 {
-	BYTE li;
-	BYTE byte;
-	BYTE code;
-	BYTE choice;
-	UINT16 initiator;
-	DomainMCSPDU MCSPDU;
-	DomainMCSPDU domainMCSPDU;
+	BYTE li = 0;
+	BYTE code = 0;
+	BYTE choice = 0;
+	UINT16 initiator = 0;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->settings);
 	WINPR_ASSERT(s);
-	MCSPDU = (rdp->settings->ServerMode) ? DomainMCSPDU_SendDataRequest
-	                                     : DomainMCSPDU_SendDataIndication;
+	DomainMCSPDU MCSPDU = (rdp->settings->ServerMode) ? DomainMCSPDU_SendDataRequest
+	                                                  : DomainMCSPDU_SendDataIndication;
 
 	*channelId = 0; /* Initialize in case of early abort */
 	if (!tpkt_read_header(s, length))
@@ -559,7 +575,7 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
 	if (!per_read_choice(s, &choice))
 		return FALSE;
 
-	domainMCSPDU = (DomainMCSPDU)(choice >> 2);
+	const DomainMCSPDU domainMCSPDU = (DomainMCSPDU)(choice >> 2);
 
 	if (domainMCSPDU != MCSPDU)
 	{
@@ -602,12 +618,13 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
 			 * when the user logs off like they should. Map DisconnectProviderUltimatum
 			 * to a ERRINFO_LOGOFF_BY_USER when the errinfo code is ERRINFO_SUCCESS.
 			 */
+			UINT32 errorInfo = ERRINFO_RPC_INITIATED_DISCONNECT;
 			if (reason == Disconnect_Ultimatum_provider_initiated)
-				rdp_set_error_info(rdp, ERRINFO_RPC_INITIATED_DISCONNECT);
+				errorInfo = ERRINFO_RPC_INITIATED_DISCONNECT;
 			else if (reason == Disconnect_Ultimatum_user_requested)
-				rdp_set_error_info(rdp, ERRINFO_LOGOFF_BY_USER);
-			else
-				rdp_set_error_info(rdp, ERRINFO_RPC_INITIATED_DISCONNECT);
+				errorInfo = ERRINFO_LOGOFF_BY_USER;
+
+			rdp_set_error_info(rdp, errorInfo);
 		}
 
 		WLog_Print(rdp->log, WLOG_DEBUG, "DisconnectProviderUltimatum: reason: %d", reason);
@@ -627,7 +644,7 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
 	if (!per_read_integer16(s, channelId, 0)) /* channelId */
 		return FALSE;
 
-	Stream_Read_UINT8(s, byte); /* dataPriority + Segmentation (0x70) */
+	const uint8_t byte = Stream_Get_UINT8(s); /* dataPriority + Segmentation (0x70) */
 
 	if (!per_read_length(s, length)) /* userData (OCTET_STRING) */
 		return FALSE;
@@ -648,29 +665,29 @@ BOOL rdp_read_header(rdpRdp* rdp, wStream* s, UINT16* length, UINT16* channelId)
  * @return \b TRUE for success, \b FALSE otherwise
  */
 
-BOOL rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channelId)
+BOOL rdp_write_header(rdpRdp* rdp, wStream* s, size_t length, UINT16 channelId)
 {
-	DomainMCSPDU MCSPDU;
-
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->settings);
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(length >= RDP_PACKET_HEADER_MAX_LENGTH);
+	if (length > UINT16_MAX)
+		return FALSE;
 
-	MCSPDU = (rdp->settings->ServerMode) ? DomainMCSPDU_SendDataIndication
-	                                     : DomainMCSPDU_SendDataRequest;
+	DomainMCSPDU MCSPDU = (rdp->settings->ServerMode) ? DomainMCSPDU_SendDataIndication
+	                                                  : DomainMCSPDU_SendDataRequest;
 
 	if ((rdp->sec_flags & SEC_ENCRYPT) &&
 	    (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS))
 	{
-		const UINT16 body_length = length - RDP_PACKET_HEADER_MAX_LENGTH;
+		const UINT16 body_length = (UINT16)length - RDP_PACKET_HEADER_MAX_LENGTH;
 		const UINT16 pad = 8 - (body_length % 8);
 
 		if (pad != 8)
 			length += pad;
 	}
 
-	if (!mcs_write_domain_mcspdu_header(s, MCSPDU, length, 0))
+	if (!mcs_write_domain_mcspdu_header(s, MCSPDU, (UINT16)length, 0))
 		return FALSE;
 	if (!per_write_integer16(s, rdp->mcs->userId, MCS_BASE_CHANNEL_ID)) /* initiator */
 		return FALSE;
@@ -686,21 +703,26 @@ BOOL rdp_write_header(rdpRdp* rdp, wStream* s, UINT16 length, UINT16 channelId)
 	 * the data first and then store the header.
 	 */
 	length = (length - RDP_PACKET_HEADER_MAX_LENGTH) | 0x8000;
-	Stream_Write_UINT16_BE(s, length); /* userData (OCTET_STRING) */
+	Stream_Write_UINT16_BE(
+	    s, WINPR_ASSERTING_INT_CAST(uint16_t, length)); /* userData (OCTET_STRING) */
 	return TRUE;
 }
 
-static BOOL rdp_security_stream_out(rdpRdp* rdp, wStream* s, int length, UINT32 sec_flags,
+static BOOL rdp_security_stream_out(rdpRdp* rdp, wStream* s, size_t length, UINT32 sec_flags,
                                     UINT32* pad)
 {
-	BOOL status;
+	BOOL status = 0;
 	WINPR_ASSERT(rdp);
+	if (length > UINT16_MAX)
+		return FALSE;
+
 	sec_flags |= rdp->sec_flags;
 	*pad = 0;
 
 	if (sec_flags != 0)
 	{
-		if (!rdp_write_security_header(rdp, s, sec_flags))
+		WINPR_ASSERT(sec_flags <= UINT16_MAX);
+		if (!rdp_write_security_header(rdp, s, (UINT16)sec_flags))
 			return FALSE;
 
 		if (sec_flags & SEC_ENCRYPT)
@@ -712,7 +734,12 @@ static BOOL rdp_security_stream_out(rdpRdp* rdp, wStream* s, int length, UINT32 
 			if (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_FIPS)
 			{
 				BYTE* data = Stream_PointerAs(s, BYTE) + 12;
-				length = length - (data - Stream_Buffer(s));
+				const size_t size = WINPR_ASSERTING_INT_CAST(size_t, (data - Stream_Buffer(s)));
+				if (size > length)
+					goto unlock;
+
+				length -= size;
+
 				Stream_Write_UINT16(s, 0x10); /* length */
 				Stream_Write_UINT8(s, 0x1);   /* TSFIPS_VERSION 1*/
 				/* handle padding */
@@ -724,7 +751,7 @@ static BOOL rdp_security_stream_out(rdpRdp* rdp, wStream* s, int length, UINT32 
 				if (*pad)
 					memset(data + length, 0, *pad);
 
-				Stream_Write_UINT8(s, *pad);
+				Stream_Write_UINT8(s, WINPR_ASSERTING_INT_CAST(uint8_t, *pad));
 
 				if (!Stream_CheckAndLogRequiredCapacityWLog(rdp->log, s, 8))
 					goto unlock;
@@ -738,16 +765,19 @@ static BOOL rdp_security_stream_out(rdpRdp* rdp, wStream* s, int length, UINT32 
 			else
 			{
 				const BYTE* data = Stream_PointerAs(s, const BYTE) + 8;
-				length = length - (data - Stream_Buffer(s));
+				const size_t diff = Stream_GetPosition(s) + 8ULL;
+				if (diff > length)
+					goto unlock;
+				length -= diff;
 
 				if (!Stream_CheckAndLogRequiredCapacityWLog(rdp->log, s, 8))
 					goto unlock;
 				if (sec_flags & SEC_SECURE_CHECKSUM)
-					status = security_salted_mac_signature(rdp, data, length, TRUE,
+					status = security_salted_mac_signature(rdp, data, (UINT32)length, TRUE,
 					                                       Stream_Pointer(s), 8);
 				else
-					status =
-					    security_mac_signature(rdp, data, length, Stream_PointerAs(s, BYTE), 8);
+					status = security_mac_signature(rdp, data, (UINT32)length,
+					                                Stream_PointerAs(s, BYTE), 8);
 
 				if (!status)
 					goto unlock;
@@ -775,7 +805,7 @@ static BOOL rdp_security_stream_out(rdpRdp* rdp, wStream* s, int length, UINT32 
 
 static UINT32 rdp_get_sec_bytes(rdpRdp* rdp, UINT16 sec_flags)
 {
-	UINT32 sec_bytes;
+	UINT32 sec_bytes = 0;
 
 	if (rdp->sec_flags & SEC_ENCRYPT)
 	{
@@ -806,8 +836,7 @@ static UINT32 rdp_get_sec_bytes(rdpRdp* rdp, UINT16 sec_flags)
 BOOL rdp_send(rdpRdp* rdp, wStream* s, UINT16 channel_id)
 {
 	BOOL rc = FALSE;
-	UINT32 pad;
-	UINT16 length;
+	UINT32 pad = 0;
 
 	if (!s)
 		return FALSE;
@@ -815,7 +844,7 @@ BOOL rdp_send(rdpRdp* rdp, wStream* s, UINT16 channel_id)
 	if (!rdp)
 		goto fail;
 
-	length = Stream_GetPosition(s);
+	size_t length = Stream_GetPosition(s);
 	Stream_SetPosition(s, 0);
 	if (!rdp_write_header(rdp, s, length, channel_id))
 		goto fail;
@@ -838,15 +867,14 @@ fail:
 
 BOOL rdp_send_pdu(rdpRdp* rdp, wStream* s, UINT16 type, UINT16 channel_id)
 {
-	UINT16 length;
-	UINT32 sec_bytes;
-	size_t sec_hold;
-	UINT32 pad;
+	UINT32 sec_bytes = 0;
+	size_t sec_hold = 0;
+	UINT32 pad = 0;
 
 	if (!rdp || !s)
 		return FALSE;
 
-	length = Stream_GetPosition(s);
+	size_t length = Stream_GetPosition(s);
 	Stream_SetPosition(s, 0);
 	if (!rdp_write_header(rdp, s, length, MCS_GLOBAL_CHANNEL_ID))
 		return FALSE;
@@ -873,10 +901,9 @@ BOOL rdp_send_pdu(rdpRdp* rdp, wStream* s, UINT16 type, UINT16 channel_id)
 BOOL rdp_send_data_pdu(rdpRdp* rdp, wStream* s, BYTE type, UINT16 channel_id)
 {
 	BOOL rc = FALSE;
-	size_t length;
-	UINT32 sec_bytes;
-	size_t sec_hold;
-	UINT32 pad;
+	UINT32 sec_bytes = 0;
+	size_t sec_hold = 0;
+	UINT32 pad = 0;
 
 	if (!s)
 		return FALSE;
@@ -884,7 +911,7 @@ BOOL rdp_send_data_pdu(rdpRdp* rdp, wStream* s, BYTE type, UINT16 channel_id)
 	if (!rdp)
 		goto fail;
 
-	length = Stream_GetPosition(s);
+	size_t length = Stream_GetPosition(s);
 	Stream_SetPosition(s, 0);
 	if (!rdp_write_header(rdp, s, length, MCS_GLOBAL_CHANNEL_ID))
 		goto fail;
@@ -920,13 +947,12 @@ fail:
 BOOL rdp_send_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 sec_flags)
 {
 	BOOL rc = FALSE;
-	UINT16 length;
-	UINT32 pad;
+	UINT32 pad = 0;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(s);
 
-	length = Stream_GetPosition(s);
+	size_t length = Stream_GetPosition(s);
 	Stream_SetPosition(s, 0);
 	if (!rdp_write_header(rdp, s, length, rdp->mcs->messageChannelId))
 		goto fail;
@@ -954,9 +980,6 @@ static BOOL rdp_recv_server_shutdown_denied_pdu(rdpRdp* rdp, wStream* s)
 
 static BOOL rdp_recv_server_set_keyboard_indicators_pdu(rdpRdp* rdp, wStream* s)
 {
-	UINT16 unitId;
-	UINT16 ledFlags;
-
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(s);
 
@@ -967,16 +990,16 @@ static BOOL rdp_recv_server_set_keyboard_indicators_pdu(rdpRdp* rdp, wStream* s)
 	if (!Stream_CheckAndLogRequiredLengthWLog(rdp->log, s, 4))
 		return FALSE;
 
-	Stream_Read_UINT16(s, unitId);   /* unitId (2 bytes) */
-	Stream_Read_UINT16(s, ledFlags); /* ledFlags (2 bytes) */
+	const uint16_t unitId = Stream_Get_UINT16(s); /* unitId (2 bytes) */
+	const UINT16 ledFlags = Stream_Get_UINT16(s); /* ledFlags (2 bytes) */
 	return IFCALLRESULT(TRUE, context->update->SetKeyboardIndicators, context, ledFlags);
 }
 
 static BOOL rdp_recv_server_set_keyboard_ime_status_pdu(rdpRdp* rdp, wStream* s)
 {
-	UINT16 unitId;
-	UINT32 imeState;
-	UINT32 imeConvMode;
+	UINT16 unitId = 0;
+	UINT32 imeState = 0;
+	UINT32 imeConvMode = 0;
 
 	if (!rdp || !rdp->input)
 		return FALSE;
@@ -993,7 +1016,7 @@ static BOOL rdp_recv_server_set_keyboard_ime_status_pdu(rdpRdp* rdp, wStream* s)
 
 static BOOL rdp_recv_set_error_info_data_pdu(rdpRdp* rdp, wStream* s)
 {
-	UINT32 errorInfo;
+	UINT32 errorInfo = 0;
 
 	if (!Stream_CheckAndLogRequiredLengthWLog(rdp->log, s, 4))
 		return FALSE;
@@ -1004,7 +1027,7 @@ static BOOL rdp_recv_set_error_info_data_pdu(rdpRdp* rdp, wStream* s)
 
 static BOOL rdp_recv_server_auto_reconnect_status_pdu(rdpRdp* rdp, wStream* s)
 {
-	UINT32 arcStatus;
+	UINT32 arcStatus = 0;
 
 	if (!Stream_CheckAndLogRequiredLengthWLog(rdp->log, s, 4))
 		return FALSE;
@@ -1016,7 +1039,7 @@ static BOOL rdp_recv_server_auto_reconnect_status_pdu(rdpRdp* rdp, wStream* s)
 
 static BOOL rdp_recv_server_status_info_pdu(rdpRdp* rdp, wStream* s)
 {
-	UINT32 statusCode;
+	UINT32 statusCode = 0;
 
 	if (!Stream_CheckAndLogRequiredLengthWLog(rdp->log, s, 4))
 		return FALSE;
@@ -1031,10 +1054,8 @@ static BOOL rdp_recv_server_status_info_pdu(rdpRdp* rdp, wStream* s)
 
 static BOOL rdp_recv_monitor_layout_pdu(rdpRdp* rdp, wStream* s)
 {
-	UINT32 index;
-	UINT32 monitorCount;
-	MONITOR_DEF* monitor;
-	MONITOR_DEF* monitorDefArray;
+	UINT32 monitorCount = 0;
+	MONITOR_DEF* monitorDefArray = NULL;
 	BOOL ret = TRUE;
 
 	WINPR_ASSERT(rdp);
@@ -1051,8 +1072,9 @@ static BOOL rdp_recv_monitor_layout_pdu(rdpRdp* rdp, wStream* s)
 	if (!monitorDefArray)
 		return FALSE;
 
-	for (monitor = monitorDefArray, index = 0; index < monitorCount; index++, monitor++)
+	for (UINT32 index = 0; index < monitorCount; index++)
 	{
+		MONITOR_DEF* monitor = &monitorDefArray[index];
 		Stream_Read_INT32(s, monitor->left);   /* left (4 bytes) */
 		Stream_Read_INT32(s, monitor->top);    /* top (4 bytes) */
 		Stream_Read_INT32(s, monitor->right);  /* right (4 bytes) */
@@ -1062,17 +1084,19 @@ static BOOL rdp_recv_monitor_layout_pdu(rdpRdp* rdp, wStream* s)
 
 	IFCALLRET(rdp->update->RemoteMonitors, ret, rdp->context, monitorCount, monitorDefArray);
 	free(monitorDefArray);
+	if (!ret)
+		return FALSE;
 	return rdp_set_monitor_layout_pdu_state(rdp, TRUE);
 }
 
 state_run_t rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 {
-	BYTE type;
-	wStream* cs;
-	UINT16 length;
-	UINT32 shareId;
-	BYTE compressedType;
-	UINT16 compressedLength;
+	BYTE type = 0;
+	wStream* cs = NULL;
+	UINT16 length = 0;
+	UINT32 shareId = 0;
+	BYTE compressedType = 0;
+	UINT16 compressedLength = 0;
 
 	WINPR_ASSERT(rdp);
 	if (!rdp_read_share_data_header(rdp, s, &length, &type, &shareId, &compressedType,
@@ -1086,12 +1110,19 @@ state_run_t rdp_recv_data_pdu(rdpRdp* rdp, wStream* s)
 
 	if (compressedType & PACKET_COMPRESSED)
 	{
+		if (compressedLength < 18)
+		{
+			WLog_Print(rdp->log, WLOG_ERROR,
+			           "bulk_decompress: not enough bytes for compressedLength %" PRIu16 "",
+			           compressedLength);
+			return STATE_RUN_FAILED;
+		}
+
 		UINT32 DstSize = 0;
 		const BYTE* pDstData = NULL;
 		UINT16 SrcSize = compressedLength - 18;
 
-		if ((compressedLength < 18) ||
-		    (!Stream_CheckAndLogRequiredLengthWLog(rdp->log, s, SrcSize)))
+		if (!Stream_CheckAndLogRequiredLengthWLog(rdp->log, s, SrcSize))
 		{
 			WLog_Print(rdp->log, WLOG_ERROR,
 			           "bulk_decompress: not enough bytes for compressedLength %" PRIu16 "",
@@ -1344,7 +1375,7 @@ state_run_t rdp_recv_message_channel_pdu(rdpRdp* rdp, wStream* s, UINT16 securit
 
 state_run_t rdp_recv_out_of_sequence_pdu(rdpRdp* rdp, wStream* s, UINT16 pduType, UINT16 length)
 {
-	state_run_t rc;
+	state_run_t rc = STATE_RUN_FAILED;
 	WINPR_ASSERT(rdp);
 
 	switch (pduType)
@@ -1387,7 +1418,7 @@ BOOL rdp_read_flow_control_pdu(rdpRdp* rdp, wStream* s, UINT16* type, UINT16* ch
 	 * However, so far pad8bits has always been observed to arrive AFTER pduTypeFlow.
 	 * Switched the order of these two fields to match this observation.
 	 */
-	UINT8 pduType;
+	UINT8 pduType = 0;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(s);
@@ -1422,7 +1453,6 @@ BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags)
 	BYTE cmac[8] = { 0 };
 	BYTE wmac[8] = { 0 };
 	BOOL status = FALSE;
-	INT32 length = 0;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->settings);
@@ -1432,7 +1462,7 @@ BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags)
 	if (!security_lock(rdp))
 		return FALSE;
 
-	length = *pLength;
+	INT32 length = *pLength;
 	if (rdp->settings->EncryptionMethods == ENCRYPTION_METHOD_NONE)
 		return TRUE;
 
@@ -1466,10 +1496,10 @@ BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags)
 			goto unlock;
 		}
 
-		if (!security_fips_decrypt(Stream_Pointer(s), length, rdp))
+		if (!security_fips_decrypt(Stream_Pointer(s), (size_t)length, rdp))
 			goto unlock;
 
-		if (!security_fips_check_signature(Stream_ConstPointer(s), length - pad, sig, 8, rdp))
+		if (!security_fips_check_signature(Stream_ConstPointer(s), (size_t)padLength, sig, 8, rdp))
 			goto unlock;
 
 		Stream_SetLength(s, Stream_Length(s) - pad);
@@ -1489,15 +1519,15 @@ BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags)
 			goto unlock;
 		}
 
-		if (!security_decrypt(Stream_PointerAs(s, BYTE), length, rdp))
+		if (!security_decrypt(Stream_PointerAs(s, BYTE), (size_t)length, rdp))
 			goto unlock;
 
 		if (securityFlags & SEC_SECURE_CHECKSUM)
-			status = security_salted_mac_signature(rdp, Stream_ConstPointer(s), length, FALSE, cmac,
-			                                       sizeof(cmac));
+			status = security_salted_mac_signature(rdp, Stream_ConstPointer(s), (UINT32)length,
+			                                       FALSE, cmac, sizeof(cmac));
 		else
-			status =
-			    security_mac_signature(rdp, Stream_ConstPointer(s), length, cmac, sizeof(cmac));
+			status = security_mac_signature(rdp, Stream_ConstPointer(s), (UINT32)length, cmac,
+			                                sizeof(cmac));
 
 		if (!status)
 			goto unlock;
@@ -1515,7 +1545,7 @@ BOOL rdp_decrypt(rdpRdp* rdp, wStream* s, UINT16* pLength, UINT16 securityFlags)
 			// return FALSE;
 		}
 
-		*pLength = length;
+		*pLength = (UINT16)length;
 	}
 	res = TRUE;
 unlock:
@@ -1526,7 +1556,7 @@ unlock:
 
 const char* pdu_type_to_str(UINT16 pduType, char* buffer, size_t length)
 {
-	const char* str;
+	const char* str = NULL;
 	switch (pduType)
 	{
 		case PDU_TYPE_DEMAND_ACTIVE:
@@ -1561,7 +1591,7 @@ const char* pdu_type_to_str(UINT16 pduType, char* buffer, size_t length)
 	winpr_str_append(str, buffer, length, "");
 	{
 		char msg[32] = { 0 };
-		_snprintf(msg, sizeof(msg), "[0x%08" PRIx32 "]", pduType);
+		(void)_snprintf(msg, sizeof(msg), "[0x%08" PRIx32 "]", pduType);
 		winpr_str_append(msg, buffer, length, "");
 	}
 	return buffer;
@@ -1576,12 +1606,12 @@ const char* pdu_type_to_str(UINT16 pduType, char* buffer, size_t length)
 static state_run_t rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 {
 	state_run_t rc = STATE_RUN_SUCCESS;
-	UINT16 length;
-	UINT16 pduType;
-	UINT16 pduSource;
+	UINT16 length = 0;
+	UINT16 pduType = 0;
+	UINT16 pduSource = 0;
 	UINT16 channelId = 0;
 	UINT16 securityFlags = 0;
-	freerdp* instance;
+	freerdp* instance = NULL;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->context);
@@ -1599,6 +1629,14 @@ static state_run_t rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 	if (rdp->autodetect->bandwidthMeasureStarted)
 	{
 		rdp->autodetect->bandwidthMeasureByteCount += length;
+	}
+
+	if (rdp->mcs->messageChannelId && (channelId == rdp->mcs->messageChannelId))
+	{
+		rdp->inPackets++;
+		if (!rdp_handle_message_channel(rdp, s, channelId, length))
+			return STATE_RUN_FAILED;
+		return STATE_RUN_SUCCESS;
 	}
 
 	if (rdp->settings->UseRdpSecurityLayer)
@@ -1631,9 +1669,9 @@ static state_run_t rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 		while (Stream_GetRemainingLength(s) > 3)
 		{
 			wStream subbuffer;
-			wStream* sub;
-			size_t diff;
-			UINT16 remain;
+			wStream* sub = NULL;
+			size_t diff = 0;
+			UINT16 remain = 0;
 
 			if (!rdp_read_share_control_header(rdp, s, NULL, &remain, &pduType, &pduSource))
 				return STATE_RUN_FAILED;
@@ -1694,14 +1732,6 @@ static state_run_t rdp_recv_tpkt_pdu(rdpRdp* rdp, wStream* s)
 				           pdu_type_to_str(pduType, buffer, sizeof(buffer)), diff);
 			}
 		}
-	}
-	else if (rdp->mcs->messageChannelId && (channelId == rdp->mcs->messageChannelId))
-	{
-		if (!rdp->settings->UseRdpSecurityLayer)
-			if (!rdp_read_security_header(rdp, s, &securityFlags, NULL))
-				return STATE_RUN_FAILED;
-		rdp->inPackets++;
-		rc = rdp_recv_message_channel_pdu(rdp, s, securityFlags);
 	}
 	else
 	{
@@ -2028,7 +2058,7 @@ static state_run_t rdp_recv_callback_int(rdpTransport* transport, wStream* s, vo
 		case CONNECTION_STATE_MULTITRANSPORT_BOOTSTRAPPING_REQUEST:
 			if (!rdp_client_connect_auto_detect(rdp, s))
 			{
-				rdp_client_transition_to_state(
+				(void)rdp_client_transition_to_state(
 				    rdp, CONNECTION_STATE_CAPABILITIES_EXCHANGE_DEMAND_ACTIVE);
 				status = STATE_RUN_TRY_AGAIN;
 			}
@@ -2152,8 +2182,8 @@ BOOL rdp_channel_send_packet(rdpRdp* rdp, UINT16 channelId, size_t totalSize, UI
 
 BOOL rdp_send_error_info(rdpRdp* rdp)
 {
-	wStream* s;
-	BOOL status;
+	wStream* s = NULL;
+	BOOL status = 0;
 
 	if (rdp->errorInfo == ERRINFO_SUCCESS)
 		return TRUE;
@@ -2170,9 +2200,9 @@ BOOL rdp_send_error_info(rdpRdp* rdp)
 
 int rdp_check_fds(rdpRdp* rdp)
 {
-	int status;
-	rdpTsg* tsg;
-	rdpTransport* transport;
+	int status = 0;
+	rdpTsg* tsg = NULL;
+	rdpTransport* transport = NULL;
 
 	WINPR_ASSERT(rdp);
 	transport = rdp->transport;
@@ -2229,7 +2259,7 @@ BOOL freerdp_get_stats(rdpRdp* rdp, UINT64* inBytes, UINT64* outBytes, UINT64* i
 
 rdpRdp* rdp_new(rdpContext* context)
 {
-	rdpRdp* rdp;
+	rdpRdp* rdp = NULL;
 	DWORD flags = 0;
 	rdp = (rdpRdp*)calloc(1, sizeof(rdpRdp));
 
@@ -2239,7 +2269,7 @@ rdpRdp* rdp_new(rdpContext* context)
 	rdp->log = WLog_Get(RDP_TAG);
 	WINPR_ASSERT(rdp->log);
 
-	_snprintf(rdp->log_context, sizeof(rdp->log_context), "%p", (void*)context);
+	(void)_snprintf(rdp->log_context, sizeof(rdp->log_context), "%p", (void*)context);
 	WLog_SetContext(rdp->log, NULL, rdp->log_context);
 
 	InitializeCriticalSection(&rdp->critical);
@@ -2261,7 +2291,7 @@ rdpRdp* rdp_new(rdpContext* context)
 
 	/* Keep a backup copy of settings for later comparisons */
 	if (!rdp_set_backup_settings(rdp))
-		return FALSE;
+		goto fail;
 
 	rdp->settings->instance = context->instance;
 
@@ -2373,6 +2403,7 @@ static void rdp_reset_free(rdpRdp* rdp)
 {
 	WINPR_ASSERT(rdp);
 
+	(void)security_lock(rdp);
 	rdp_free_rc4_decrypt_keys(rdp);
 	rdp_free_rc4_encrypt_keys(rdp);
 
@@ -2380,6 +2411,7 @@ static void rdp_reset_free(rdpRdp* rdp)
 	winpr_Cipher_Free(rdp->fips_decrypt);
 	rdp->fips_encrypt = NULL;
 	rdp->fips_decrypt = NULL;
+	(void)security_unlock(rdp);
 
 	mcs_free(rdp->mcs);
 	nego_free(rdp->nego);
@@ -2397,8 +2429,8 @@ static void rdp_reset_free(rdpRdp* rdp)
 BOOL rdp_reset(rdpRdp* rdp)
 {
 	BOOL rc = TRUE;
-	rdpContext* context;
-	rdpSettings* settings;
+	rdpContext* context = NULL;
+	rdpSettings* settings = NULL;
 
 	WINPR_ASSERT(rdp);
 
@@ -2475,7 +2507,6 @@ void rdp_free(rdpRdp* rdp)
 {
 	if (rdp)
 	{
-		DeleteCriticalSection(&rdp->critical);
 		rdp_reset_free(rdp);
 
 		freerdp_settings_free(rdp->settings);
@@ -2493,8 +2524,10 @@ void rdp_free(rdpRdp* rdp)
 		free(rdp->io);
 		PubSub_Free(rdp->pubSub);
 		if (rdp->abortEvent)
-			CloseHandle(rdp->abortEvent);
+			(void)CloseHandle(rdp->abortEvent);
 		aad_free(rdp->aad);
+		WINPR_JSON_Delete(rdp->wellknown);
+		DeleteCriticalSection(&rdp->critical);
 		free(rdp);
 	}
 }
@@ -2546,11 +2579,12 @@ void* rdp_get_io_callback_context(rdpRdp* rdp)
 const char* rdp_finalize_flags_to_str(UINT32 flags, char* buffer, size_t size)
 {
 	char number[32] = { 0 };
-	const UINT32 mask = ~(FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU |
-	                      FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU |
-	                      FINALIZE_CS_SYNCHRONIZE_PDU | FINALIZE_CS_CONTROL_COOPERATE_PDU |
-	                      FINALIZE_CS_CONTROL_REQUEST_PDU | FINALIZE_CS_PERSISTENT_KEY_LIST_PDU |
-	                      FINALIZE_CS_FONT_LIST_PDU | FINALIZE_DEACTIVATE_REACTIVATE);
+	const UINT32 mask =
+	    (uint32_t)~(FINALIZE_SC_SYNCHRONIZE_PDU | FINALIZE_SC_CONTROL_COOPERATE_PDU |
+	                FINALIZE_SC_CONTROL_GRANTED_PDU | FINALIZE_SC_FONT_MAP_PDU |
+	                FINALIZE_CS_SYNCHRONIZE_PDU | FINALIZE_CS_CONTROL_COOPERATE_PDU |
+	                FINALIZE_CS_CONTROL_REQUEST_PDU | FINALIZE_CS_PERSISTENT_KEY_LIST_PDU |
+	                FINALIZE_CS_FONT_LIST_PDU | FINALIZE_DEACTIVATE_REACTIVATE);
 
 	if (flags & FINALIZE_SC_SYNCHRONIZE_PDU)
 		winpr_str_append("FINALIZE_SC_SYNCHRONIZE_PDU", buffer, size, "|");
@@ -2576,7 +2610,7 @@ const char* rdp_finalize_flags_to_str(UINT32 flags, char* buffer, size_t size)
 		winpr_str_append("UNKNOWN_FLAG", buffer, size, "|");
 	if (flags == 0)
 		winpr_str_append("NO_FLAG_SET", buffer, size, "|");
-	_snprintf(number, sizeof(number), " [0x%08" PRIx32 "]", flags);
+	(void)_snprintf(number, sizeof(number), " [0x%08" PRIx32 "]", flags);
 	winpr_str_append(number, buffer, size, "");
 	return buffer;
 }
@@ -2682,7 +2716,7 @@ const char* rdp_security_flag_string(UINT32 securityFlags, char* buffer, size_t 
 	{
 		char msg[32] = { 0 };
 
-		_snprintf(msg, sizeof(msg), "[0x%08" PRIx32 "]", securityFlags);
+		(void)_snprintf(msg, sizeof(msg), "[0x%08" PRIx32 "]", securityFlags);
 		winpr_str_append(msg, buffer, size, "");
 	}
 	return buffer;
@@ -2763,6 +2797,20 @@ static BOOL parse_on_off_option(const char* value)
 
 #define STR(x) #x
 
+static BOOL option_is_runtime_checks(wLog* log, const char* tok)
+{
+	const char* experimental[] = { STR(WITH_VERBOSE_WINPR_ASSERT) };
+	for (size_t x = 0; x < ARRAYSIZE(experimental); x++)
+	{
+		const char* opt = experimental[x];
+		if (starts_with(tok, opt))
+		{
+			return parse_on_off_option(tok);
+		}
+	}
+	return FALSE;
+}
+
 static BOOL option_is_experimental(wLog* log, const char* tok)
 {
 	const char* experimental[] = { STR(WITH_DSP_EXPERIMENTAL), STR(WITH_VAAPI) };
@@ -2840,18 +2888,24 @@ static void log_build_warn(rdpRdp* rdp, const char* what, const char* msg,
                            BOOL (*cmp)(wLog* log, const char* tok))
 {
 	WINPR_ASSERT(rdp);
+	WINPR_PRAGMA_DIAG_PUSH
+	WINPR_PRAGMA_DIAG_IGNORED_OVERLENGTH_STRINGS
+
 	size_t len = sizeof(FREERDP_BUILD_CONFIG);
 	char* list = calloc(len, sizeof(char));
 	char* config = _strdup(FREERDP_BUILD_CONFIG);
+	WINPR_PRAGMA_DIAG_POP
+
 	if (config && list)
 	{
-		char* tok = strtok(config, " ");
+		char* saveptr = NULL;
+		char* tok = strtok_s(config, " ", &saveptr);
 		while (tok)
 		{
 			if (cmp(rdp->log, tok))
 				winpr_str_append(tok, list, len, " ");
 
-			tok = strtok(NULL, " ");
+			tok = strtok_s(NULL, " ", &saveptr);
 		}
 	}
 	free(config);
@@ -2862,11 +2916,13 @@ static void log_build_warn(rdpRdp* rdp, const char* what, const char* msg,
 		{
 			WLog_Print(rdp->log, WLOG_WARN, "*************************************************");
 			WLog_Print(rdp->log, WLOG_WARN, "This build is using [%s] build options:", what);
-			char* tok = strtok(list, " ");
+
+			char* saveptr = NULL;
+			char* tok = strtok_s(list, " ", &saveptr);
 			while (tok)
 			{
 				WLog_Print(rdp->log, WLOG_WARN, "* '%s'", tok);
-				tok = strtok(NULL, " ");
+				tok = strtok_s(NULL, " ", &saveptr);
 			}
 			WLog_Print(rdp->log, WLOG_WARN, "");
 			WLog_Print(rdp->log, WLOG_WARN, "[%s] build options %s", what, msg);
@@ -2876,13 +2932,161 @@ static void log_build_warn(rdpRdp* rdp, const char* what, const char* msg,
 	free(list);
 }
 
+#define print_first_line(log, firstLine, what) \
+	print_first_line_int((log), (firstLine), (what), __FILE__, __func__, __LINE__)
+static void print_first_line_int(wLog* log, log_line_t* firstLine, const char* what,
+                                 const char* file, const char* fkt, size_t line)
+{
+	WINPR_ASSERT(firstLine);
+	if (!firstLine->fkt)
+	{
+		const DWORD level = WLOG_WARN;
+		if (WLog_IsLevelActive(log, level))
+		{
+			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, level, line, file, fkt,
+			                  "*************************************************");
+			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, level, line, file, fkt,
+			                  "[SSL] {%s} build or configuration missing:", what);
+		}
+		firstLine->line = line;
+		firstLine->file = file;
+		firstLine->fkt = fkt;
+		firstLine->level = level;
+	}
+}
+
+static void print_last_line(wLog* log, const log_line_t* firstLine)
+{
+	WINPR_ASSERT(firstLine);
+	if (firstLine->fkt)
+	{
+		if (WLog_IsLevelActive(log, firstLine->level))
+			WLog_PrintMessage(log, WLOG_MESSAGE_TEXT, firstLine->level, firstLine->line,
+			                  firstLine->file, firstLine->fkt,
+			                  "*************************************************");
+	}
+}
+
+static void log_build_warn_cipher(rdpRdp* rdp, log_line_t* firstLine, WINPR_CIPHER_TYPE md,
+                                  const char* what)
+{
+	BOOL haveCipher = FALSE;
+
+	char key[WINPR_CIPHER_MAX_KEY_LENGTH] = { 0 };
+	char iv[WINPR_CIPHER_MAX_IV_LENGTH] = { 0 };
+
+	/* RC4 only exists in the compatibility functions winpr_RC4_*
+	 * winpr_Cipher_* does not support that. */
+	if (md == WINPR_CIPHER_ARC4_128)
+	{
+		WINPR_RC4_CTX* enc = winpr_RC4_New(key, sizeof(key));
+		haveCipher = enc != NULL;
+		winpr_RC4_Free(enc);
+	}
+	else
+	{
+		WINPR_CIPHER_CTX* enc =
+		    winpr_Cipher_NewEx(md, WINPR_ENCRYPT, key, sizeof(key), iv, sizeof(iv));
+		WINPR_CIPHER_CTX* dec =
+		    winpr_Cipher_NewEx(md, WINPR_DECRYPT, key, sizeof(key), iv, sizeof(iv));
+		if (enc && dec)
+			haveCipher = TRUE;
+
+		winpr_Cipher_Free(enc);
+		winpr_Cipher_Free(dec);
+	}
+
+	if (!haveCipher)
+	{
+		print_first_line(rdp->log, firstLine, "Cipher");
+		WLog_Print(rdp->log, WLOG_WARN, "* %s: %s", winpr_cipher_type_to_string(md), what);
+	}
+}
+
+static void log_build_warn_hmac(rdpRdp* rdp, log_line_t* firstLine, WINPR_MD_TYPE md,
+                                const char* what)
+{
+	BOOL haveHmacX = FALSE;
+	WINPR_HMAC_CTX* hmac = winpr_HMAC_New();
+	if (hmac)
+	{
+		/* We need some key length, but there is no real limit here.
+		 * just take the cipher maximum key length as we already have that available.
+		 */
+		char key[WINPR_CIPHER_MAX_KEY_LENGTH] = { 0 };
+		haveHmacX = winpr_HMAC_Init(hmac, md, key, sizeof(key));
+	}
+	winpr_HMAC_Free(hmac);
+
+	if (!haveHmacX)
+	{
+		print_first_line(rdp->log, firstLine, "HMAC");
+		WLog_Print(rdp->log, WLOG_WARN, " * %s: %s", winpr_md_type_to_string(md), what);
+	}
+}
+
+static void log_build_warn_hash(rdpRdp* rdp, log_line_t* firstLine, WINPR_MD_TYPE md,
+                                const char* what)
+{
+	BOOL haveDigestX = FALSE;
+
+	WINPR_DIGEST_CTX* digest = winpr_Digest_New();
+	if (digest)
+		haveDigestX = winpr_Digest_Init(digest, md);
+	winpr_Digest_Free(digest);
+
+	if (!haveDigestX)
+	{
+		print_first_line(rdp->log, firstLine, "Digest");
+		WLog_Print(rdp->log, WLOG_WARN, " * %s: %s", winpr_md_type_to_string(md), what);
+	}
+}
+
+static void log_build_warn_ssl(rdpRdp* rdp)
+{
+	WINPR_ASSERT(rdp);
+
+	log_line_t firstHashLine = { 0 };
+	log_build_warn_hash(rdp, &firstHashLine, WINPR_MD_MD4, "NTLM support not available");
+	log_build_warn_hash(rdp, &firstHashLine, WINPR_MD_MD5,
+	                    "NTLM, assistance files with encrypted passwords, autoreconnect cookies, "
+	                    "licensing and RDP security will not work");
+	log_build_warn_hash(rdp, &firstHashLine, WINPR_MD_SHA1,
+	                    "assistance files with encrypted passwords, Kerberos, Smartcard Logon, RDP "
+	                    "security support not available");
+	log_build_warn_hash(
+	    rdp, &firstHashLine, WINPR_MD_SHA256,
+	    "file clipboard, AAD gateway, NLA security and certificates might not work");
+	print_last_line(rdp->log, &firstHashLine);
+
+	log_line_t firstHmacLine = { 0 };
+	log_build_warn_hmac(rdp, &firstHmacLine, WINPR_MD_MD5, "Autoreconnect cookie not supported");
+	log_build_warn_hmac(rdp, &firstHmacLine, WINPR_MD_SHA1, "RDP security not supported");
+	print_last_line(rdp->log, &firstHmacLine);
+
+	log_line_t firstCipherLine = { 0 };
+	log_build_warn_cipher(rdp, &firstCipherLine, WINPR_CIPHER_ARC4_128,
+	                      "assistance files with encrypted passwords, NTLM, RDP licensing and RDP "
+	                      "security will not work");
+	log_build_warn_cipher(rdp, &firstCipherLine, WINPR_CIPHER_DES_EDE3_CBC,
+	                      "RDP security FIPS mode will not work");
+	log_build_warn_cipher(
+	    rdp, &firstCipherLine, WINPR_CIPHER_AES_128_CBC,
+	    "assistance file encrypted LHTicket will not work and ARM gateway might not");
+	log_build_warn_cipher(rdp, &firstCipherLine, WINPR_CIPHER_AES_192_CBC,
+	                      "ARM gateway might not work");
+	log_build_warn_cipher(rdp, &firstCipherLine, WINPR_CIPHER_AES_256_CBC,
+	                      "ARM gateway might not work");
+	print_last_line(rdp->log, &firstCipherLine);
+}
+
 void rdp_log_build_warnings(rdpRdp* rdp)
 {
 	static unsigned count = 0;
 
 	WINPR_ASSERT(rdp);
 	/* Since this function is called in context creation routines stop logging
-	 * this issue repetedly. This is required for proxy, which would otherwise
+	 * this issue repeatedly. This is required for proxy, which would otherwise
 	 * spam the log with these. */
 	if (count > 0)
 		return;
@@ -2890,4 +3094,7 @@ void rdp_log_build_warnings(rdpRdp* rdp)
 	log_build_warn(rdp, "experimental", "might crash the application", option_is_experimental);
 	log_build_warn(rdp, "debug", "might leak sensitive information (credentials, ...)",
 	               option_is_debug);
+	log_build_warn(rdp, "runtime-check", "might slow down the application",
+	               option_is_runtime_checks);
+	log_build_warn_ssl(rdp);
 }

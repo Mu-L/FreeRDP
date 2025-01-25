@@ -119,21 +119,22 @@ void shadow_screen_free(rdpShadowScreen* screen)
 
 BOOL shadow_screen_resize(rdpShadowScreen* screen)
 {
-	int x, y;
-	int width, height;
-	MONITOR_DEF* primary;
-	rdpShadowSubsystem* subsystem;
-
 	if (!screen)
 		return FALSE;
 
-	subsystem = screen->server->subsystem;
-	primary = &(subsystem->monitors[subsystem->selectedMonitor]);
+	WINPR_ASSERT(screen->server);
 
-	x = primary->left;
-	y = primary->top;
-	width = primary->right - primary->left + 1;
-	height = primary->bottom - primary->top + 1;
+	rdpShadowSubsystem* subsystem = screen->server->subsystem;
+	WINPR_ASSERT(subsystem);
+	WINPR_ASSERT(subsystem->monitors);
+
+	MONITOR_DEF* primary = &(subsystem->monitors[subsystem->selectedMonitor]);
+	WINPR_ASSERT(primary);
+
+	const INT32 x = primary->left;
+	const INT32 y = primary->top;
+	const INT32 width = primary->right - primary->left + 1;
+	const INT32 height = primary->bottom - primary->top + 1;
 
 	WINPR_ASSERT(x >= 0);
 	WINPR_ASSERT(x <= UINT16_MAX);
@@ -143,6 +144,7 @@ BOOL shadow_screen_resize(rdpShadowScreen* screen)
 	WINPR_ASSERT(width <= UINT16_MAX);
 	WINPR_ASSERT(height >= 0);
 	WINPR_ASSERT(height <= UINT16_MAX);
+
 	if (shadow_surface_resize(screen->primary, (UINT16)x, (UINT16)y, (UINT16)width,
 	                          (UINT16)height) &&
 	    shadow_surface_resize(screen->lobby, (UINT16)x, (UINT16)y, (UINT16)width, (UINT16)height))

@@ -24,6 +24,10 @@
 #include <freerdp/dvc.h>
 #include <freerdp/types.h>
 
+/** The command line name of the channel
+ *
+ *  \since version 3.0.0
+ */
 #define RDPECAM_CHANNEL_NAME "rdpecam"
 #define RDPECAM_DVC_CHANNEL_NAME "rdpecam"
 #define RDPECAM_CONTROL_DVC_CHANNEL_NAME "RDCamera_Device_Enumerator"
@@ -171,6 +175,7 @@ typedef struct
 
 typedef enum
 {
+	CAM_MEDIA_FORMAT_INVALID = 0x00,
 	CAM_MEDIA_FORMAT_H264 = 0x01,
 	CAM_MEDIA_FORMAT_MJPG = 0x02,
 	CAM_MEDIA_FORMAT_YUY2 = 0x03,

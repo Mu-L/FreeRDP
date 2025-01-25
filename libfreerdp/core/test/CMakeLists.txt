@@ -1,54 +1,43 @@
-
 set(MODULE_NAME "TestCore")
 set(MODULE_PREFIX "TEST_CORE")
 
-set(${MODULE_PREFIX}_DRIVER ${MODULE_NAME}.c)
+disable_warnings_for_directory(${CMAKE_CURRENT_BINARY_DIR})
 
-set(${MODULE_PREFIX}_TESTS
-	TestVersion.c
-	TestStreamDump.c
-	TestSettings.c)
+set(DRIVER ${MODULE_NAME}.c)
 
-set(${MODULE_PREFIX}_FUZZERS
-	TestFuzzCryptoCertificateDataSetPEM.c)
+set(TESTS TestVersion.c TestSettings.c)
 
-if(WITH_SAMPLE AND WITH_SERVER AND NOT WIN32)
-	add_definitions(-DCMAKE_EXECUTABLE_SUFFIX="${CMAKE_EXECUTABLE_SUFFIX}")
-	set(${MODULE_PREFIX}_TESTS
-		${${MODULE_PREFIX}_TESTS}
-		TestConnect.c)
-else()
-	message("Skipping connection tests, requires WITH_SAMPLE and WITH_SERVER set!")
+if(BUILD_TESTING_INTERNAL)
+  list(APPEND TESTS TestStreamDump.c)
 endif()
 
-create_test_sourcelist(${MODULE_PREFIX}_SRCS
-	${${MODULE_PREFIX}_DRIVER}
-	${${MODULE_PREFIX}_TESTS})
+set(FUZZERS TestFuzzCoreClient.c TestFuzzCoreServer.c TestFuzzCryptoCertificateDataSetPEM.c)
 
-add_executable(${MODULE_NAME} ${${MODULE_PREFIX}_SRCS})
+# Test not compatible with package tests, disable
+if(WITH_SAMPLE AND WITH_SERVER AND NOT WIN32 AND BUILD_TESTING_INTERNAL)
+  add_compile_definitions(CMAKE_EXECUTABLE_SUFFIX="${CMAKE_EXECUTABLE_SUFFIX}")
+  set(TESTS ${TESTS} TestConnect.c)
+else()
+  message("Skipping connection tests, requires BUILD_TESTING_INTERNAL, WITH_SAMPLE and WITH_SERVER set!")
+endif()
 
-add_definitions(-DTESTING_OUTPUT_DIRECTORY="${PROJECT_BINARY_DIR}")
-add_definitions(-DTESTING_SRC_DIRECTORY="${PROJECT_SOURCE_DIR}")
+create_test_sourcelist(SRCS ${DRIVER} ${TESTS})
+
+add_executable(${MODULE_NAME} ${SRCS})
+
+add_compile_definitions(TESTING_OUTPUT_DIRECTORY="${PROJECT_BINARY_DIR}")
+add_compile_definitions(TESTING_SRC_DIRECTORY="${PROJECT_SOURCE_DIR}")
 
 target_link_libraries(${MODULE_NAME} freerdp winpr freerdp-client)
 
-if (BUILD_FUZZERS)
-	foreach(test ${${MODULE_PREFIX}_FUZZERS})
-		get_filename_component(TestName ${test} NAME_WE)
-		add_executable(${TestName} ${test})
-		target_link_libraries(${TestName} freerdp winpr freerdp-client fuzzer_config)
-		add_test(${TestName} ${TESTING_OUTPUT_DIRECTORY}/${MODULE_NAME} ${TestName})
-		set_target_properties(${TestName} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${TESTING_OUTPUT_DIRECTORY}")
-		add_dependencies(fuzzers ${TestName})
-	endforeach()
-endif (BUILD_FUZZERS)
+include(AddFuzzerTest)
+add_fuzzer_test("${FUZZERS}" "freerdp-client freerdp winpr")
 
 set_target_properties(${MODULE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${TESTING_OUTPUT_DIRECTORY}")
 
-foreach(test ${${MODULE_PREFIX}_TESTS})
-	get_filename_component(TestName ${test} NAME_WE)
-	add_test(${TestName} ${TESTING_OUTPUT_DIRECTORY}/${MODULE_NAME} ${TestName})
+foreach(test ${TESTS})
+  get_filename_component(TestName ${test} NAME_WE)
+  add_test(${TestName} ${TESTING_OUTPUT_DIRECTORY}/${MODULE_NAME} ${TestName})
 endforeach()
 
 set_property(TARGET ${MODULE_NAME} PROPERTY FOLDER "FreeRDP/Core/Test")
-

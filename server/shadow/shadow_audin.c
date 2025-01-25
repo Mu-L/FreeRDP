@@ -29,14 +29,12 @@
 #include <freerdp/server/audin.h>
 #endif
 
-#define TAG SERVER_TAG("shadow")
-
 #if defined(CHANNEL_AUDIN_SERVER)
 
 static UINT AudinServerData(audin_server_context* audin, const SNDIN_DATA* data)
 {
-	rdpShadowClient* client;
-	rdpShadowSubsystem* subsystem;
+	rdpShadowClient* client = NULL;
+	rdpShadowSubsystem* subsystem = NULL;
 
 	WINPR_ASSERT(audin);
 	WINPR_ASSERT(data);
@@ -75,7 +73,10 @@ BOOL shadow_client_audin_init(rdpShadowClient* client)
 
 	if (client->subsystem->audinFormats)
 	{
-		if (!audin_server_set_formats(client->audin, client->subsystem->nAudinFormats,
+		if (client->subsystem->nAudinFormats > SSIZE_MAX)
+			goto fail;
+
+		if (!audin_server_set_formats(client->audin, (SSIZE_T)client->subsystem->nAudinFormats,
 		                              client->subsystem->audinFormats))
 			goto fail;
 	}

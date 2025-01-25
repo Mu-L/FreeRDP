@@ -29,8 +29,10 @@
 #include <freerdp/utils/aad.h>
 
 #include <winpr/crypto.h>
+#include <winpr/json.h>
 
 #include "transport.h"
+#include "rdp.h"
 
 #include "aad.h"
 
@@ -50,13 +52,14 @@ struct rdp_aad
 
 #ifdef WITH_AAD
 
+static BOOL aad_fetch_wellknown(rdpAad* aad);
 static BOOL get_encoded_rsa_params(wLog* wlog, rdpPrivateKey* key, char** e, char** n);
 static BOOL generate_pop_key(rdpAad* aad);
 
 WINPR_ATTR_FORMAT_ARG(2, 3)
 static SSIZE_T stream_sprintf(wStream* s, WINPR_FORMAT_ARG const char* fmt, ...)
 {
-	va_list ap;
+	va_list ap = { 0 };
 	va_start(ap, fmt);
 	const int rc = vsnprintf(NULL, 0, fmt, ap);
 	va_end(ap);
@@ -69,7 +72,7 @@ static SSIZE_T stream_sprintf(wStream* s, WINPR_FORMAT_ARG const char* fmt, ...)
 
 	char* ptr = Stream_PointerAs(s, char);
 	va_start(ap, fmt);
-	const int rc2 = vsnprintf(ptr, rc + 1, fmt, ap);
+	const int rc2 = vsnprintf(ptr, WINPR_ASSERTING_INT_CAST(size_t, rc) + 1, fmt, ap);
 	va_end(ap);
 	if (rc != rc2)
 		return -23;
@@ -78,18 +81,18 @@ static SSIZE_T stream_sprintf(wStream* s, WINPR_FORMAT_ARG const char* fmt, ...)
 	return rc2;
 }
 
-static BOOL json_get_object(wLog* wlog, cJSON* json, const char* key, cJSON** obj)
+static BOOL json_get_object(wLog* wlog, WINPR_JSON* json, const char* key, WINPR_JSON** obj)
 {
 	WINPR_ASSERT(json);
 	WINPR_ASSERT(key);
 
-	if (!cJSON_HasObjectItem(json, key))
+	if (!WINPR_JSON_HasObjectItem(json, key))
 	{
 		WLog_Print(wlog, WLOG_ERROR, "[json] does not contain a key '%s'", key);
 		return FALSE;
 	}
 
-	cJSON* prop = cJSON_GetObjectItem(json, key);
+	WINPR_JSON* prop = WINPR_JSON_GetObjectItem(json, key);
 	if (!prop)
 	{
 		WLog_Print(wlog, WLOG_ERROR, "[json] object for key '%s' is NULL", key);
@@ -99,80 +102,45 @@ static BOOL json_get_object(wLog* wlog, cJSON* json, const char* key, cJSON** ob
 	return TRUE;
 }
 
-#if defined(USE_CJSON_COMPAT)
-static double cJSON_GetNumberValue(const cJSON* const prop)
-{
-#ifndef NAN
-#ifdef _WIN32
-#define NAN sqrt(-1.0)
-#define COMPAT_NAN_UNDEF
-#else
-#define NAN 0.0 / 0.0
-#define COMPAT_NAN_UNDEF
-#endif
-#endif
-
-	if (!cJSON_IsNumber(prop))
-		return NAN;
-	char* val = cJSON_GetStringValue(prop);
-	if (!val)
-		return NAN;
-
-	errno = 0;
-	char* endptr = NULL;
-	double dval = strtod(val, &endptr);
-	if (val == endptr)
-		return NAN;
-	if (endptr != NULL)
-		return NAN;
-	if (errno != 0)
-		return NAN;
-	return dval;
-
-#ifdef COMPAT_NAN_UNDEF
-#undef NAN
-#endif
-}
-#endif
-
-static BOOL json_get_number(wLog* wlog, cJSON* json, const char* key, double* result)
+static BOOL json_get_number(wLog* wlog, WINPR_JSON* json, const char* key, double* result)
 {
 	BOOL rc = FALSE;
-	cJSON* prop = NULL;
+	WINPR_JSON* prop = NULL;
 	if (!json_get_object(wlog, json, key, &prop))
 		return FALSE;
 
-	if (!cJSON_IsNumber(prop))
+	if (!WINPR_JSON_IsNumber(prop))
 	{
 		WLog_Print(wlog, WLOG_ERROR, "[json] object for key '%s' is NOT a NUMBER", key);
 		goto fail;
 	}
 
-	*result = cJSON_GetNumberValue(prop);
+	*result = WINPR_JSON_GetNumberValue(prop);
 
 	rc = TRUE;
 fail:
 	return rc;
 }
 
-static BOOL json_get_const_string(wLog* wlog, cJSON* json, const char* key, const char** result)
+static BOOL json_get_const_string(wLog* wlog, WINPR_JSON* json, const char* key,
+                                  const char** result)
 {
 	BOOL rc = FALSE;
 	WINPR_ASSERT(result);
 
 	*result = NULL;
 
-	cJSON* prop = NULL;
+	WINPR_JSON* prop = NULL;
 	if (!json_get_object(wlog, json, key, &prop))
 		return FALSE;
 
-	if (!cJSON_IsString(prop))
+	if (!WINPR_JSON_IsString(prop))
 	{
 		WLog_Print(wlog, WLOG_ERROR, "[json] object for key '%s' is NOT a STRING", key);
 		goto fail;
 	}
 
-	const char* str = cJSON_GetStringValue(prop);
+	const char* str = WINPR_JSON_GetStringValue(prop);
 	if (!str)
 		WLog_Print(wlog, WLOG_ERROR, "[json] object for key '%s' is NULL", key);
 	*result = str;
@@ -182,7 +150,7 @@ fail:
 	return rc;
 }
 
-static BOOL json_get_string_alloc(wLog* wlog, cJSON* json, const char* key, char** result)
+static BOOL json_get_string_alloc(wLog* wlog, WINPR_JSON* json, const char* key, char** result)
 {
 	const char* str = NULL;
 	if (!json_get_const_string(wlog, json, key, &str))
@@ -194,24 +162,10 @@ static BOOL json_get_string_alloc(wLog* wlog, cJSON* json, const char* key, char
 	return *result != NULL;
 }
 
-#if defined(USE_CJSON_COMPAT)
-cJSON* cJSON_ParseWithLength(const char* value, size_t buffer_length)
-{
-	// Check for string '\0' termination.
-	const size_t slen = strnlen(value, buffer_length);
-	if (slen >= buffer_length)
-	{
-		if (value[buffer_length] != '\0')
-			return NULL;
-	}
-	return cJSON_Parse(value);
-}
-#endif
-
 static INLINE const char* aad_auth_result_to_string(DWORD code)
 {
-#define ERROR_CASE(cd, x) \
-	if (cd == (DWORD)(x)) \
+#define ERROR_CASE(cd, x)   \
+	if ((cd) == (DWORD)(x)) \
 		return #x;
 
 	ERROR_CASE(code, S_OK)
@@ -232,10 +186,30 @@ static BOOL aad_get_nonce(rdpAad* aad)
 	BYTE* response = NULL;
 	long resp_code = 0;
 	size_t response_length = 0;
-	cJSON* json = NULL;
+	WINPR_JSON* json = NULL;
 
-	if (!freerdp_http_request("https://login.microsoftonline.com/common/oauth2/v2.0/token",
-	                          "grant_type=srv_challenge", &resp_code, &response, &response_length))
+	WINPR_ASSERT(aad);
+	WINPR_ASSERT(aad->rdpcontext);
+
+	rdpRdp* rdp = aad->rdpcontext->rdp;
+	WINPR_ASSERT(rdp);
+
+	WINPR_JSON* obj = WINPR_JSON_GetObjectItem(rdp->wellknown, "token_endpoint");
+	if (!obj)
+	{
+		WLog_Print(aad->log, WLOG_ERROR, "wellknown does not have 'token_endpoint', aborting");
+		return FALSE;
+	}
+	const char* url = WINPR_JSON_GetStringValue(obj);
+	if (!url)
+	{
+		WLog_Print(aad->log, WLOG_ERROR,
+		           "wellknown does have 'token_endpoint=NULL' value, aborting");
+		return FALSE;
+	}
+
+	if (!freerdp_http_request(url, "grant_type=srv_challenge", &resp_code, &response,
+	                          &response_length))
 	{
 		WLog_Print(aad->log, WLOG_ERROR, "nonce request failed");
 		goto fail;
@@ -250,7 +224,7 @@ static BOOL aad_get_nonce(rdpAad* aad)
 		goto fail;
 	}
 
-	json = cJSON_ParseWithLength((const char*)response, response_length);
+	json = WINPR_JSON_ParseWithLength((const char*)response, response_length);
 	if (!json)
 	{
 		WLog_Print(aad->log, WLOG_ERROR, "Failed to parse nonce response");
@@ -264,7 +238,7 @@ static BOOL aad_get_nonce(rdpAad* aad)
 
 fail:
 	free(response);
-	cJSON_Delete(json);
+	WINPR_JSON_Delete(json);
 	return ret;
 }
 
@@ -317,6 +291,10 @@ int aad_client_begin(rdpAad* aad)
 		WLog_Print(aad->log, WLOG_ERROR, "instance->GetAccessToken == NULL");
 		return -1;
 	}
+
+	if (!aad_fetch_wellknown(aad))
+		return -1;
+
 	const BOOL arc = instance->GetAccessToken(instance, ACCESS_TOKEN_TYPE_AAD, &aad->access_token,
 	                                          2, aad->scope, aad->kid);
 	if (!arc)
@@ -536,12 +514,12 @@ static int aad_parse_state_initial(rdpAad* aad, wStream* s)
 	const size_t jlen = Stream_GetRemainingLength(s);
 	const char* ts_nonce = NULL;
 	int ret = -1;
-	cJSON* json = NULL;
+	WINPR_JSON* json = NULL;
 
 	if (!Stream_SafeSeek(s, jlen))
 		goto fail;
 
-	json = cJSON_ParseWithLength(jstr, jlen);
+	json = WINPR_JSON_ParseWithLength(jstr, jlen);
 	if (!json)
 		goto fail;
 
@@ -550,7 +528,7 @@ static int aad_parse_state_initial(rdpAad* aad, wStream* s)
 
 	ret = aad_send_auth_request(aad, ts_nonce);
 fail:
-	cJSON_Delete(json);
+	WINPR_JSON_Delete(json);
 	return ret;
 }
 
@@ -559,14 +537,14 @@ static int aad_parse_state_auth(rdpAad* aad, wStream* s)
 	int rc = -1;
 	double result = 0;
 	DWORD error_code = 0;
-	cJSON* json = NULL;
+	WINPR_JSON* json = NULL;
 	const char* jstr = Stream_PointerAs(s, char);
 	const size_t jlength = Stream_GetRemainingLength(s);
 
 	if (!Stream_SafeSeek(s, jlength))
 		goto fail;
 
-	json = cJSON_ParseWithLength(jstr, jlength);
+	json = WINPR_JSON_ParseWithLength(jstr, jlength);
 	if (!json)
 		goto fail;
 
@@ -583,7 +561,7 @@ static int aad_parse_state_auth(rdpAad* aad, wStream* s)
 	aad->state = AAD_STATE_FINAL;
 	rc = 1;
 fail:
-	cJSON_Delete(json);
+	WINPR_JSON_Delete(json);
 	return rc;
 }
 
@@ -675,7 +653,8 @@ BOOL generate_pop_key(rdpAad* aad)
 	BOOL ret = FALSE;
 	char* buffer = NULL;
 	char* b64_hash = NULL;
-	char *e = NULL, *n = NULL;
+	char* e = NULL;
+	char* n = NULL;
 
 	WINPR_ASSERT(aad);
 
@@ -715,11 +694,11 @@ static char* bn_to_base64_url(wLog* wlog, rdpPrivateKey* key, enum FREERDP_KEY_P
 	WINPR_ASSERT(key);
 
 	size_t len = 0;
-	char* bn = freerdp_key_get_param(key, param, &len);
+	BYTE* bn = freerdp_key_get_param(key, param, &len);
 	if (!bn)
 		return NULL;
 
-	char* b64 = (char*)crypto_base64url_encode(bn, len);
+	char* b64 = crypto_base64url_encode(bn, len);
 	free(bn);
 
 	if (!b64)
@@ -841,14 +820,13 @@ BOOL aad_is_supported(void)
 #endif
 }
 
-#ifdef WITH_AAD
 char* freerdp_utils_aad_get_access_token(wLog* log, const char* data, size_t length)
 {
 	char* token = NULL;
-	cJSON* access_token_prop = NULL;
+	WINPR_JSON* access_token_prop = NULL;
 	const char* access_token_str = NULL;
 
-	cJSON* json = cJSON_ParseWithLength(data, length);
+	WINPR_JSON* json = WINPR_JSON_ParseWithLength(data, length);
 	if (!json)
 	{
 		WLog_Print(log, WLOG_ERROR, "Failed to parse access token response [got %" PRIuz " bytes",
@@ -856,14 +834,14 @@ char* freerdp_utils_aad_get_access_token(wLog* log, const char* data, size_t len
 		goto cleanup;
 	}
 
-	access_token_prop = cJSON_GetObjectItem(json, "access_token");
+	access_token_prop = WINPR_JSON_GetObjectItem(json, "access_token");
 	if (!access_token_prop)
 	{
 		WLog_Print(log, WLOG_ERROR, "Response has no \"access_token\" property");
 		goto cleanup;
 	}
 
-	access_token_str = cJSON_GetStringValue(access_token_prop);
+	access_token_str = WINPR_JSON_GetStringValue(access_token_prop);
 	if (!access_token_str)
 	{
 		WLog_Print(log, WLOG_ERROR, "Invalid value for \"access_token\"");
@@ -873,7 +851,162 @@ char* freerdp_utils_aad_get_access_token(wLog* log, const char* data, size_t len
 	token = _strdup(access_token_str);
 
 cleanup:
-	cJSON_Delete(json);
+	WINPR_JSON_Delete(json);
 	return token;
 }
-#endif
+
+BOOL aad_fetch_wellknown(rdpAad* aad)
+{
+	WINPR_ASSERT(aad);
+	WINPR_ASSERT(aad->rdpcontext);
+
+	rdpRdp* rdp = aad->rdpcontext->rdp;
+	WINPR_ASSERT(rdp);
+
+	if (rdp->wellknown)
+		return TRUE;
+
+	const char* base =
+	    freerdp_settings_get_string(aad->rdpcontext->settings, FreeRDP_GatewayAzureActiveDirectory);
+	const BOOL useTenant =
+	    freerdp_settings_get_bool(aad->rdpcontext->settings, FreeRDP_GatewayAvdUseTenantid);
+	const char* tenantid = "common";
+	if (useTenant)
+		tenantid =
+		    freerdp_settings_get_string(aad->rdpcontext->settings, FreeRDP_GatewayAvdAadtenantid);
+	rdp->wellknown = freerdp_utils_aad_get_wellknown(aad->log, base, tenantid);
+	return rdp->wellknown ? TRUE : FALSE;
+}
+
+const char* freerdp_utils_aad_get_wellknown_string(rdpContext* context, AAD_WELLKNOWN_VALUES which)
+{
+	return freerdp_utils_aad_get_wellknown_custom_string(
+	    context, freerdp_utils_aad_wellknwon_value_name(which));
+}
+
+const char* freerdp_utils_aad_get_wellknown_custom_string(rdpContext* context, const char* which)
+{
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(context->rdp);
+
+	if (!context->rdp->wellknown)
+		return NULL;
+
+	WINPR_JSON* obj = WINPR_JSON_GetObjectItem(context->rdp->wellknown, which);
+	if (!obj)
+		return NULL;
+
+	return WINPR_JSON_GetStringValue(obj);
+}
+
+const char* freerdp_utils_aad_wellknwon_value_name(AAD_WELLKNOWN_VALUES which)
+{
+	switch (which)
+	{
+		case AAD_WELLKNOWN_token_endpoint:
+			return "token_endpoint";
+		case AAD_WELLKNOWN_token_endpoint_auth_methods_supported:
+			return "token_endpoint_auth_methods_supported";
+		case AAD_WELLKNOWN_jwks_uri:
+			return "jwks_uri";
+		case AAD_WELLKNOWN_response_modes_supported:
+			return "response_modes_supported";
+		case AAD_WELLKNOWN_subject_types_supported:
+			return "subject_types_supported";
+		case AAD_WELLKNOWN_id_token_signing_alg_values_supported:
+			return "id_token_signing_alg_values_supported";
+		case AAD_WELLKNOWN_response_types_supported:
+			return "response_types_supported";
+		case AAD_WELLKNOWN_scopes_supported:
+			return "scopes_supported";
+		case AAD_WELLKNOWN_issuer:
+			return "issuer";
+		case AAD_WELLKNOWN_request_uri_parameter_supported:
+			return "request_uri_parameter_supported";
+		case AAD_WELLKNOWN_userinfo_endpoint:
+			return "userinfo_endpoint";
+		case AAD_WELLKNOWN_authorization_endpoint:
+			return "authorization_endpoint";
+		case AAD_WELLKNOWN_device_authorization_endpoint:
+			return "device_authorization_endpoint";
+		case AAD_WELLKNOWN_http_logout_supported:
+			return "http_logout_supported";
+		case AAD_WELLKNOWN_frontchannel_logout_supported:
+			return "frontchannel_logout_supported";
+		case AAD_WELLKNOWN_end_session_endpoint:
+			return "end_session_endpoint";
+		case AAD_WELLKNOWN_claims_supported:
+			return "claims_supported";
+		case AAD_WELLKNOWN_kerberos_endpoint:
+			return "kerberos_endpoint";
+		case AAD_WELLKNOWN_tenant_region_scope:
+			return "tenant_region_scope";
+		case AAD_WELLKNOWN_cloud_instance_name:
+			return "cloud_instance_name";
+		case AAD_WELLKNOWN_cloud_graph_host_name:
+			return "cloud_graph_host_name";
+		case AAD_WELLKNOWN_msgraph_host:
+			return "msgraph_host";
+		case AAD_WELLKNOWN_rbac_url:
+			return "rbac_url";
+		default:
+			return "UNKNOWN";
+	}
+}
+
+WINPR_JSON* freerdp_utils_aad_get_wellknown_object(rdpContext* context, AAD_WELLKNOWN_VALUES which)
+{
+	return freerdp_utils_aad_get_wellknown_custom_object(
+	    context, freerdp_utils_aad_wellknwon_value_name(which));
+}
+
+WINPR_JSON* freerdp_utils_aad_get_wellknown_custom_object(rdpContext* context, const char* which)
+{
+	WINPR_ASSERT(context);
+	WINPR_ASSERT(context->rdp);
+
+	if (!context->rdp->wellknown)
+		return NULL;
+
+	return WINPR_JSON_GetObjectItem(context->rdp->wellknown, which);
+}
+
+WINPR_ATTR_MALLOC(WINPR_JSON_Delete, 1)
+WINPR_JSON* freerdp_utils_aad_get_wellknown(wLog* log, const char* base, const char* tenantid)
+{
+	WINPR_ASSERT(base);
+	WINPR_ASSERT(tenantid);
+
+	char* str = NULL;
+	size_t len = 0;
+	winpr_asprintf(&str, &len, "https://%s/%s/v2.0/.well-known/openid-configuration", base,
+	               tenantid);
+
+	if (!str)
+	{
+		WLog_Print(log, WLOG_ERROR, "failed to create request URL for tenantid='%s'", tenantid);
+		return NULL;
+	}
+
+	BYTE* response = NULL;
+	long resp_code = 0;
+	size_t response_length = 0;
+	const BOOL rc = freerdp_http_request(str, NULL, &resp_code, &response, &response_length);
+	if (!rc || (resp_code != HTTP_STATUS_OK))
+	{
+		WLog_Print(log, WLOG_ERROR, "request for '%s' failed with: %s", str,
+		           freerdp_http_status_string(resp_code));
+		free(str);
+		free(response);
+		return NULL;
+	}
+	free(str);
+
+	WINPR_JSON* json = WINPR_JSON_ParseWithLength((const char*)response, response_length);
+	free(response);
+
+	if (!json)
+		WLog_Print(log, WLOG_ERROR, "failed to parse response as JSON");
+
+	return json;
+}

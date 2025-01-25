@@ -61,9 +61,9 @@ static UINT irp_free(IRP* irp)
  */
 static UINT irp_complete(IRP* irp)
 {
-	size_t pos;
-	rdpdrPlugin* rdpdr;
-	UINT error;
+	size_t pos = 0;
+	rdpdrPlugin* rdpdr = NULL;
+	UINT error = 0;
 
 	WINPR_ASSERT(irp);
 	WINPR_ASSERT(irp->output);
@@ -74,7 +74,7 @@ static UINT irp_complete(IRP* irp)
 
 	pos = Stream_GetPosition(irp->output);
 	Stream_SetPosition(irp->output, RDPDR_DEVICE_IO_RESPONSE_LENGTH - 4);
-	Stream_Write_UINT32(irp->output, irp->IoStatus); /* IoStatus (4 bytes) */
+	Stream_Write_INT32(irp->output, irp->IoStatus); /* IoStatus (4 bytes) */
 	Stream_SetPosition(irp->output, pos);
 
 	error = rdpdr_send(rdpdr, irp->output);
@@ -86,9 +86,9 @@ static UINT irp_complete(IRP* irp)
 
 IRP* irp_new(DEVMAN* devman, wStreamPool* pool, wStream* s, wLog* log, UINT* error)
 {
-	IRP* irp;
-	DEVICE* device;
-	UINT32 DeviceId;
+	IRP* irp = NULL;
+	DEVICE* device = NULL;
+	UINT32 DeviceId = 0;
 
 	WINPR_ASSERT(devman);
 	WINPR_ASSERT(pool);

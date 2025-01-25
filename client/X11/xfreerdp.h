@@ -64,17 +64,17 @@ typedef XcursorUInt XcursorPixel;
 
 struct xf_FullscreenMonitors
 {
-	UINT32 top;
-	UINT32 bottom;
-	UINT32 left;
-	UINT32 right;
+	INT32 top;
+	INT32 bottom;
+	INT32 left;
+	INT32 right;
 };
 typedef struct xf_FullscreenMonitors xfFullscreenMonitors;
 
 struct xf_WorkArea
 {
-	UINT32 x;
-	UINT32 y;
+	INT32 x;
+	INT32 y;
 	UINT32 width;
 	UINT32 height;
 };
@@ -118,7 +118,7 @@ typedef struct xf_rail_icon_cache xfRailIconCache;
 
 typedef struct
 {
-	int button;
+	UINT32 button;
 	UINT16 flags;
 } button_map;
 
@@ -223,6 +223,7 @@ struct xf_context
 
 	Atom _NET_WM_ICON;
 	Atom _MOTIF_WM_HINTS;
+	Atom _NET_NUMBER_OF_DESKTOPS;
 	Atom _NET_CURRENT_DESKTOP;
 	Atom _NET_WORKAREA;
 
@@ -230,11 +231,18 @@ struct xf_context
 	Atom _NET_SUPPORTING_WM_CHECK;
 
 	Atom _NET_WM_STATE;
-	Atom _NET_WM_STATE_FULLSCREEN;
-	Atom _NET_WM_STATE_MAXIMIZED_HORZ;
+	Atom _NET_WM_STATE_MODAL;
+	Atom _NET_WM_STATE_STICKY;
 	Atom _NET_WM_STATE_MAXIMIZED_VERT;
+	Atom _NET_WM_STATE_MAXIMIZED_HORZ;
+	Atom _NET_WM_STATE_SHADED;
 	Atom _NET_WM_STATE_SKIP_TASKBAR;
 	Atom _NET_WM_STATE_SKIP_PAGER;
+	Atom _NET_WM_STATE_HIDDEN;
+	Atom _NET_WM_STATE_FULLSCREEN;
+	Atom _NET_WM_STATE_ABOVE;
+	Atom _NET_WM_STATE_BELOW;
+	Atom _NET_WM_STATE_DEMANDS_ATTENTION;
 
 	Atom _NET_WM_FULLSCREEN_MONITORS;
 
@@ -255,6 +263,18 @@ struct xf_context
 	Atom WM_STATE;
 	Atom WM_PROTOCOLS;
 	Atom WM_DELETE_WINDOW;
+
+	/* Allow actions */
+	Atom NET_WM_ALLOWED_ACTIONS;
+
+	Atom NET_WM_ACTION_CLOSE;
+	Atom NET_WM_ACTION_MINIMIZE;
+	Atom NET_WM_ACTION_MOVE;
+	Atom NET_WM_ACTION_RESIZE;
+	Atom NET_WM_ACTION_MAXIMIZE_HORZ;
+	Atom NET_WM_ACTION_MAXIMIZE_VERT;
+	Atom NET_WM_ACTION_FULLSCREEN;
+	Atom NET_WM_ACTION_CHANGE_DESKTOP;
 
 	/* Channels */
 #if defined(CHANNEL_TSMF_CLIENT)
@@ -277,7 +297,7 @@ struct xf_context
 	button_map button_map[NUM_BUTTONS_MAPPED];
 	BYTE savedMaximizedState;
 	UINT32 locked;
-	BOOL firstPressRightCtrl;
+	BOOL wasRightCtrlAlreadyPressed;
 	BOOL ungrabKeyboardWithRightCtrl;
 
 #if defined(WITH_XI)
@@ -294,11 +314,13 @@ struct xf_context
 	BOOL xi_rawevent;
 	BOOL xi_event;
 	HANDLE pipethread;
+	wLog* log;
 };
 
 BOOL xf_create_window(xfContext* xfc);
 BOOL xf_create_image(xfContext* xfc);
 void xf_toggle_fullscreen(xfContext* xfc);
+void xf_minimize(xfContext* xfc);
 
 enum XF_EXIT_CODE
 {
@@ -384,6 +406,6 @@ void xf_draw_screen_(xfContext* xfc, int x, int y, int w, int h, const char* fkt
 
 BOOL xf_keyboard_update_modifier_map(xfContext* xfc);
 
-DWORD xf_exit_code_from_disconnect_reason(DWORD reason);
+int xf_exit_code_from_disconnect_reason(DWORD reason);
 
 #endif /* FREERDP_CLIENT_X11_FREERDP_H */

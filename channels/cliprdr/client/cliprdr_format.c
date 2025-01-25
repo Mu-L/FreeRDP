@@ -47,7 +47,7 @@ CLIPRDR_FORMAT_LIST cliprdr_filter_format_list(const CLIPRDR_FORMAT_LIST* list, 
 	CLIPRDR_FORMAT_LIST filtered = { 0 };
 	filtered.common.msgType = CB_FORMAT_LIST;
 	filtered.numFormats = list->numFormats;
-	filtered.formats = calloc(filtered.numFormats, sizeof(CLIPRDR_FORMAT_LIST));
+	filtered.formats = calloc(filtered.numFormats, sizeof(CLIPRDR_FORMAT));
 
 	size_t wpos = 0;
 	if ((mask & checkMask) == checkMask)
@@ -98,7 +98,8 @@ CLIPRDR_FORMAT_LIST cliprdr_filter_format_list(const CLIPRDR_FORMAT_LIST* list, 
 			}
 		}
 	}
-	filtered.numFormats = wpos;
+	WINPR_ASSERT(wpos <= UINT32_MAX);
+	filtered.numFormats = (UINT32)wpos;
 	return filtered;
 }
 

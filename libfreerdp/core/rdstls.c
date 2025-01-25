@@ -53,6 +53,19 @@ typedef enum
 	RDSTLS_STATE_FINAL,
 } RDSTLS_STATE;
 
+typedef enum
+{
+
+	RDSTLS_RESULT_SUCCESS = 0x00000000,
+	RDSTLS_RESULT_ACCESS_DENIED = 0x00000005,
+	RDSTLS_RESULT_LOGON_FAILURE = 0x0000052e,
+	RDSTLS_RESULT_INVALID_LOGON_HOURS = 0x00000530,
+	RDSTLS_RESULT_PASSWORD_EXPIRED = 0x00000532,
+	RDSTLS_RESULT_ACCOUNT_DISABLED = 0x00000533,
+	RDSTLS_RESULT_PASSWORD_MUST_CHANGE = 0x00000773,
+	RDSTLS_RESULT_ACCOUNT_LOCKED_OUT = 0x00000775
+} RDSTLS_RESULT_CODE;
+
 struct rdp_rdstls
 {
 	BOOL server;
@@ -60,10 +73,34 @@ struct rdp_rdstls
 	rdpContext* context;
 	rdpTransport* transport;
 
-	UINT32 resultCode;
+	RDSTLS_RESULT_CODE resultCode;
 	wLog* log;
 };
 
+static const char* rdstls_result_code_str(UINT32 resultCode)
+{
+	switch (resultCode)
+	{
+		case RDSTLS_RESULT_SUCCESS:
+			return "RDSTLS_RESULT_SUCCESS";
+		case RDSTLS_RESULT_ACCESS_DENIED:
+			return "RDSTLS_RESULT_ACCESS_DENIED";
+		case RDSTLS_RESULT_LOGON_FAILURE:
+			return "RDSTLS_RESULT_LOGON_FAILURE";
+		case RDSTLS_RESULT_INVALID_LOGON_HOURS:
+			return "RDSTLS_RESULT_INVALID_LOGON_HOURS";
+		case RDSTLS_RESULT_PASSWORD_EXPIRED:
+			return "RDSTLS_RESULT_PASSWORD_EXPIRED";
+		case RDSTLS_RESULT_ACCOUNT_DISABLED:
+			return "RDSTLS_RESULT_ACCOUNT_DISABLED";
+		case RDSTLS_RESULT_PASSWORD_MUST_CHANGE:
+			return "RDSTLS_RESULT_PASSWORD_MUST_CHANGE";
+		case RDSTLS_RESULT_ACCOUNT_LOCKED_OUT:
+			return "RDSTLS_RESULT_ACCOUNT_LOCKED_OUT";
+		default:
+			return "RDSTLS_RESULT_UNKNOWN";
+	}
+}
 /**
  * Create new RDSTLS state machine.
  *
@@ -228,10 +265,10 @@ static BOOL rdstls_write_data(wStream* s, UINT32 length, const BYTE* data)
 {
 	WINPR_ASSERT(data || (length == 0));
 
-	if (!Stream_EnsureRemainingCapacity(s, 2))
+	if (!Stream_EnsureRemainingCapacity(s, 2) || (length > UINT16_MAX))
 		return FALSE;
 
-	Stream_Write_UINT16(s, length);
+	Stream_Write_UINT16(s, (UINT16)length);
 
 	if (!Stream_EnsureRemainingCapacity(s, length))
 		return FALSE;
@@ -287,10 +324,10 @@ static BOOL rdstls_write_authentication_response(rdpRdstls* rdstls, wStream* s)
 
 static BOOL rdstls_process_capabilities(rdpRdstls* rdstls, wStream* s)
 {
-	UINT16 dataType;
-	UINT16 supportedVersions;
+	UINT16 dataType = 0;
+	UINT16 supportedVersions = 0;
 
-	if (!Stream_CheckAndLogRequiredLengthWLog(rdstls->log, s, 4))
+	if (Stream_GetRemainingLength(s) < 4)
 		return FALSE;
 
 	Stream_Read_UINT16(s, dataType);
@@ -320,12 +357,12 @@ static BOOL rdstls_read_unicode_string(wLog* log, wStream* s, char** str)
 
 	WINPR_ASSERT(str);
 
-	if (!Stream_CheckAndLogRequiredLengthWLog(log, s, 2))
+	if (Stream_GetRemainingLength(s) < 2)
 		return FALSE;
 
 	Stream_Read_UINT16(s, length);
 
-	if (!Stream_CheckAndLogRequiredLengthWLog(log, s, length))
+	if (Stream_GetRemainingLength(s) < length)
 		return FALSE;
 
 	if (length <= 2)
@@ -350,12 +387,12 @@ static BOOL rdstls_read_data(wLog* log, wStream* s, UINT16* pLength, const BYTE*
 
 	*pData = NULL;
 	*pLength = 0;
-	if (!Stream_CheckAndLogRequiredLengthWLog(log, s, 2))
+	if (Stream_GetRemainingLength(s) < 2)
 		return FALSE;
 
 	Stream_Read_UINT16(s, length);
 
-	if (!Stream_CheckAndLogRequiredLengthWLog(log, s, length))
+	if (Stream_GetRemainingLength(s) < length)
 		return FALSE;
 
 	if (length <= 2)
@@ -366,7 +403,8 @@ static BOOL rdstls_read_data(wLog* log, wStream* s, UINT16* pLength, const BYTE*
 
 	*pData = Stream_ConstPointer(s);
 	*pLength = length;
-	return Stream_SafeSeek(s, length);
+	Stream_Seek(s, length);
+	return TRUE;
 }
 
 static BOOL rdstls_cmp_data(wLog* log, const char* field, const BYTE* serverData,
@@ -403,6 +441,8 @@ static BOOL rdstls_cmp_str(wLog* log, const char* field, const char* serverStr,
 			return FALSE;
 		}
 
+		WINPR_ASSERT(serverStr);
+		WINPR_ASSERT(clientStr);
 		if (strcmp(serverStr, clientStr) != 0)
 		{
 			WLog_Print(log, WLOG_ERROR, "%s verification failed", field);
@@ -424,7 +464,6 @@ static BOOL rdstls_process_authentication_request_with_password(rdpRdstls* rdstl
 	char* clientDomain = NULL;
 
 	const BYTE* serverRedirectionGuid = NULL;
-	UINT16 serverRedirectionGuidLength = 0;
 	const char* serverPassword = NULL;
 	const char* serverUsername = NULL;
 	const char* serverDomain = NULL;
@@ -445,27 +484,27 @@ static BOOL rdstls_process_authentication_request_with_password(rdpRdstls* rdstl
 		goto fail;
 
 	serverRedirectionGuid = freerdp_settings_get_pointer(settings, FreeRDP_RedirectionGuid);
-	serverRedirectionGuidLength =
+	const UINT32 serverRedirectionGuidLength =
 	    freerdp_settings_get_uint32(settings, FreeRDP_RedirectionGuidLength);
 	serverUsername = freerdp_settings_get_string(settings, FreeRDP_Username);
 	serverDomain = freerdp_settings_get_string(settings, FreeRDP_Domain);
 	serverPassword = freerdp_settings_get_string(settings, FreeRDP_Password);
 
-	rdstls->resultCode = ERROR_SUCCESS;
+	rdstls->resultCode = RDSTLS_RESULT_SUCCESS;
 
 	if (!rdstls_cmp_data(rdstls->log, "RedirectionGuid", serverRedirectionGuid,
 	                     serverRedirectionGuidLength, clientRedirectionGuid,
 	                     clientRedirectionGuidLength))
-		rdstls->resultCode = ERROR_LOGON_FAILURE;
+		rdstls->resultCode = RDSTLS_RESULT_ACCESS_DENIED;
 
 	if (!rdstls_cmp_str(rdstls->log, "UserName", serverUsername, clientUsername))
-		rdstls->resultCode = ERROR_LOGON_FAILURE;
+		rdstls->resultCode = RDSTLS_RESULT_LOGON_FAILURE;
 
 	if (!rdstls_cmp_str(rdstls->log, "Domain", serverDomain, clientDomain))
-		rdstls->resultCode = ERROR_LOGON_FAILURE;
+		rdstls->resultCode = RDSTLS_RESULT_LOGON_FAILURE;
 
 	if (!rdstls_cmp_str(rdstls->log, "Password", serverPassword, clientPassword))
-		rdstls->resultCode = ERROR_LOGON_FAILURE;
+		rdstls->resultCode = RDSTLS_RESULT_LOGON_FAILURE;
 
 	rc = TRUE;
 fail:
@@ -480,9 +519,9 @@ static BOOL rdstls_process_authentication_request_with_cookie(rdpRdstls* rdstls,
 
 static BOOL rdstls_process_authentication_request(rdpRdstls* rdstls, wStream* s)
 {
-	UINT16 dataType;
+	UINT16 dataType = 0;
 
-	if (!Stream_CheckAndLogRequiredLengthWLog(rdstls->log, s, 2))
+	if (Stream_GetRemainingLength(s) < 2)
 		return FALSE;
 
 	Stream_Read_UINT16(s, dataType);
@@ -509,10 +548,10 @@ static BOOL rdstls_process_authentication_request(rdpRdstls* rdstls, wStream* s)
 
 static BOOL rdstls_process_authentication_response(rdpRdstls* rdstls, wStream* s)
 {
-	UINT16 dataType;
-	UINT32 resultCode;
+	UINT16 dataType = 0;
+	UINT32 resultCode = 0;
 
-	if (!Stream_CheckAndLogRequiredLengthWLog(rdstls->log, s, 6))
+	if (Stream_GetRemainingLength(s) < 6)
 		return FALSE;
 
 	Stream_Read_UINT16(s, dataType);
@@ -525,11 +564,41 @@ static BOOL rdstls_process_authentication_response(rdpRdstls* rdstls, wStream* s
 	}
 
 	Stream_Read_UINT32(s, resultCode);
-	if (resultCode != ERROR_SUCCESS)
+	if (resultCode != RDSTLS_RESULT_SUCCESS)
 	{
-		WLog_Print(rdstls->log, WLOG_ERROR, "resultCode: %s [0x%08" PRIX32 "] %s",
-		           freerdp_get_last_error_name(resultCode), resultCode,
-		           freerdp_get_last_error_string(resultCode));
+		WLog_Print(rdstls->log, WLOG_ERROR, "resultCode: %s [0x%08" PRIX32 "]",
+		           rdstls_result_code_str(resultCode), resultCode);
+
+		UINT32 error = ERROR_INTERNAL_ERROR;
+		switch (resultCode)
+		{
+			case RDSTLS_RESULT_ACCESS_DENIED:
+				error = FREERDP_ERROR_CONNECT_ACCESS_DENIED;
+				break;
+			case RDSTLS_RESULT_ACCOUNT_DISABLED:
+				error = FREERDP_ERROR_CONNECT_ACCOUNT_DISABLED;
+				break;
+			case RDSTLS_RESULT_ACCOUNT_LOCKED_OUT:
+				error = FREERDP_ERROR_CONNECT_ACCOUNT_LOCKED_OUT;
+				break;
+			case RDSTLS_RESULT_LOGON_FAILURE:
+				error = FREERDP_ERROR_CONNECT_LOGON_FAILURE;
+				break;
+			case RDSTLS_RESULT_INVALID_LOGON_HOURS:
+				error = FREERDP_ERROR_CONNECT_ACCOUNT_RESTRICTION;
+				break;
+			case RDSTLS_RESULT_PASSWORD_EXPIRED:
+				error = FREERDP_ERROR_CONNECT_PASSWORD_EXPIRED;
+				break;
+			case RDSTLS_RESULT_PASSWORD_MUST_CHANGE:
+				error = FREERDP_ERROR_CONNECT_PASSWORD_MUST_CHANGE;
+				break;
+			default:
+				error = ERROR_INVALID_PARAMETER;
+				break;
+		}
+
+		freerdp_set_last_error_if_not(rdstls->context, error);
 		return FALSE;
 	}
 
@@ -596,15 +665,15 @@ static BOOL rdstls_send(rdpTransport* transport, wStream* s, void* extra)
 
 static int rdstls_recv(rdpTransport* transport, wStream* s, void* extra)
 {
-	UINT16 version;
-	UINT16 pduType;
+	UINT16 version = 0;
+	UINT16 pduType = 0;
 	rdpRdstls* rdstls = (rdpRdstls*)extra;
 
 	WINPR_ASSERT(transport);
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(rdstls);
 
-	if (!Stream_CheckAndLogRequiredLengthWLog(rdstls->log, s, 4))
+	if (Stream_GetRemainingLength(s) < 4)
 		return FALSE;
 
 	Stream_Read_UINT16(s, version);
@@ -683,7 +752,7 @@ fail:
 static BOOL rdstls_recv_authentication_request(rdpRdstls* rdstls)
 {
 	BOOL rc = FALSE;
-	int status;
+	int status = 0;
 	wStream* s = NULL;
 
 	if (!rdstls_check_state_requirements(rdstls, RDSTLS_STATE_AUTH_REQ))
@@ -733,7 +802,7 @@ fail:
 static BOOL rdstls_recv_capabilities(rdpRdstls* rdstls)
 {
 	BOOL rc = FALSE;
-	int status;
+	int status = 0;
 	wStream* s = NULL;
 
 	if (!rdstls_check_state_requirements(rdstls, RDSTLS_STATE_CAPABILITIES))
@@ -783,7 +852,7 @@ fail:
 static BOOL rdstls_recv_authentication_response(rdpRdstls* rdstls)
 {
 	BOOL rc = FALSE;
-	int status;
+	int status = 0;
 	wStream* s = NULL;
 
 	WINPR_ASSERT(rdstls);
@@ -825,7 +894,7 @@ static int rdstls_server_authenticate(rdpRdstls* rdstls)
 	if (!rdstls_send_authentication_response(rdstls))
 		return -1;
 
-	if (rdstls->resultCode != 0)
+	if (rdstls->resultCode != RDSTLS_RESULT_SUCCESS)
 		return -1;
 
 	return 1;
@@ -867,11 +936,13 @@ int rdstls_authenticate(rdpRdstls* rdstls)
 
 static SSIZE_T rdstls_parse_pdu_data_type(wLog* log, UINT16 dataType, wStream* s)
 {
+	size_t pduLength = 0;
+
 	switch (dataType)
 	{
 		case RDSTLS_DATA_PASSWORD_CREDS:
 		{
-			UINT16 redirGuidLength;
+			UINT16 redirGuidLength = 0;
 			if (Stream_GetRemainingLength(s) < 2)
 				return 0;
 			Stream_Read_UINT16(s, redirGuidLength);
@@ -880,7 +951,7 @@ static SSIZE_T rdstls_parse_pdu_data_type(wLog* log, UINT16 dataType, wStream* s
 				return 0;
 			Stream_Seek(s, redirGuidLength);
 
-			UINT16 usernameLength;
+			UINT16 usernameLength = 0;
 			if (Stream_GetRemainingLength(s) < 2)
 				return 0;
 			Stream_Read_UINT16(s, usernameLength);
@@ -889,7 +960,7 @@ static SSIZE_T rdstls_parse_pdu_data_type(wLog* log, UINT16 dataType, wStream* s
 				return 0;
 			Stream_Seek(s, usernameLength);
 
-			UINT16 domainLength;
+			UINT16 domainLength = 0;
 			if (Stream_GetRemainingLength(s) < 2)
 				return 0;
 			Stream_Read_UINT16(s, domainLength);
@@ -898,30 +969,36 @@ static SSIZE_T rdstls_parse_pdu_data_type(wLog* log, UINT16 dataType, wStream* s
 				return 0;
 			Stream_Seek(s, domainLength);
 
-			UINT16 passwordLength;
+			UINT16 passwordLength = 0;
 			if (Stream_GetRemainingLength(s) < 2)
 				return 0;
 			Stream_Read_UINT16(s, passwordLength);
 
-			return Stream_GetPosition(s) + passwordLength;
+			pduLength = Stream_GetPosition(s) + passwordLength;
 		}
+		break;
 		case RDSTLS_DATA_AUTORECONNECT_COOKIE:
 		{
 			if (Stream_GetRemainingLength(s) < 4)
 				return 0;
 			Stream_Seek(s, 4);
 
-			UINT16 cookieLength;
+			UINT16 cookieLength = 0;
 			if (Stream_GetRemainingLength(s) < 2)
 				return 0;
 			Stream_Read_UINT16(s, cookieLength);
 
-			return 12u + cookieLength;
+			pduLength = Stream_GetPosition(s) + cookieLength;
 		}
+		break;
 		default:
 			WLog_Print(log, WLOG_ERROR, "invalid RDSLTS dataType");
 			return -1;
 	}
+
+	if (pduLength > SSIZE_MAX)
+		return 0;
+	return (SSIZE_T)pduLength;
 }
 
 SSIZE_T rdstls_parse_pdu(wLog* log, wStream* stream)
@@ -930,7 +1007,7 @@ SSIZE_T rdstls_parse_pdu(wLog* log, wStream* stream)
 	wStream sbuffer = { 0 };
 	wStream* s = Stream_StaticConstInit(&sbuffer, Stream_Buffer(stream), Stream_Length(stream));
 
-	UINT16 version;
+	UINT16 version = 0;
 	if (Stream_GetRemainingLength(s) < 2)
 		return 0;
 	Stream_Read_UINT16(s, version);
@@ -940,7 +1017,7 @@ SSIZE_T rdstls_parse_pdu(wLog* log, wStream* stream)
 		return -1;
 	}
 
-	UINT16 pduType;
+	UINT16 pduType = 0;
 	if (Stream_GetRemainingLength(s) < 2)
 		return 0;
 	Stream_Read_UINT16(s, pduType);
@@ -952,7 +1029,7 @@ SSIZE_T rdstls_parse_pdu(wLog* log, wStream* stream)
 		case RDSTLS_TYPE_AUTHREQ:
 			if (Stream_GetRemainingLength(s) < 2)
 				return 0;
-			UINT16 dataType;
+			UINT16 dataType = 0;
 			Stream_Read_UINT16(s, dataType);
 			pduLength = rdstls_parse_pdu_data_type(log, dataType, s);
 

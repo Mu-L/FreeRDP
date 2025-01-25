@@ -51,7 +51,7 @@
  * It can be used to reset invalidated areas. */
 static BOOL tf_begin_paint(rdpContext* context)
 {
-	rdpGdi* gdi;
+	rdpGdi* gdi = NULL;
 
 	WINPR_ASSERT(context);
 
@@ -71,7 +71,7 @@ static BOOL tf_begin_paint(rdpContext* context)
  */
 static BOOL tf_end_paint(rdpContext* context)
 {
-	rdpGdi* gdi;
+	rdpGdi* gdi = NULL;
 
 	WINPR_ASSERT(context);
 
@@ -90,8 +90,8 @@ static BOOL tf_end_paint(rdpContext* context)
 
 static BOOL tf_desktop_resize(rdpContext* context)
 {
-	rdpGdi* gdi;
-	rdpSettings* settings;
+	rdpGdi* gdi = NULL;
+	rdpSettings* settings = NULL;
 
 	WINPR_ASSERT(context);
 
@@ -139,13 +139,18 @@ static BOOL tf_keyboard_set_ime_status(rdpContext* context, UINT16 imeId, UINT32
  * Set all configuration options to support and load channels here. */
 static BOOL tf_pre_connect(freerdp* instance)
 {
-	rdpSettings* settings;
+	rdpSettings* settings = NULL;
 
 	WINPR_ASSERT(instance);
 	WINPR_ASSERT(instance->context);
 
 	settings = instance->context->settings;
 	WINPR_ASSERT(settings);
+
+	/* If the callbacks provide the PEM all certificate options can be extracted, otherwise
+	 * only the certificate fingerprint is available. */
+	if (!freerdp_settings_set_bool(settings, FreeRDP_CertificateCallbackPreferPEM, TRUE))
+		return FALSE;
 
 	/* Optional OS identifier sent to server */
 	if (!freerdp_settings_set_uint32(settings, FreeRDP_OsMajorType, OSMAJORTYPE_UNIX))
@@ -154,7 +159,7 @@ static BOOL tf_pre_connect(freerdp* instance)
 		return FALSE;
 	/* OrderSupport is initialized at this point.
 	 * Only override it if you plan to implement custom order
-	 * callbacks or deactiveate certain features. */
+	 * callbacks or deactivate certain features. */
 	/* Register the channel listeners.
 	 * They are required to set up / tear down channels if they are loaded. */
 	PubSub_SubscribeChannelConnected(instance->context->pubSub, tf_OnChannelConnectedEventHandler);
@@ -166,7 +171,7 @@ static BOOL tf_pre_connect(freerdp* instance)
 }
 
 /* Called after a RDP connection was successfully established.
- * Settings might have changed during negociation of client / server feature
+ * Settings might have changed during negotiation of client / server feature
  * support.
  *
  * Set up local framebuffers and paing callbacks.
@@ -175,7 +180,7 @@ static BOOL tf_pre_connect(freerdp* instance)
  */
 static BOOL tf_post_connect(freerdp* instance)
 {
-	rdpContext* context;
+	rdpContext* context = NULL;
 
 	if (!gdi_init(instance, PIXEL_FORMAT_XRGB32))
 		return FALSE;
@@ -205,7 +210,7 @@ static BOOL tf_post_connect(freerdp* instance)
  */
 static void tf_post_disconnect(freerdp* instance)
 {
-	tfContext* context;
+	tfContext* context = NULL;
 
 	if (!instance)
 		return;
@@ -229,8 +234,8 @@ static void tf_post_disconnect(freerdp* instance)
 static DWORD WINAPI tf_client_thread_proc(LPVOID arg)
 {
 	freerdp* instance = (freerdp*)arg;
-	DWORD nCount;
-	DWORD status;
+	DWORD nCount = 0;
+	DWORD status = 0;
 	DWORD result = 0;
 	HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
 	BOOL rc = freerdp_connect(instance);
@@ -302,7 +307,7 @@ static void tf_client_global_uninit(void)
 
 static int tf_logon_error_info(freerdp* instance, UINT32 data, UINT32 type)
 {
-	tfContext* tf;
+	tfContext* tf = NULL;
 	const char* str_data = freerdp_get_logon_error_info_data(data);
 	const char* str_type = freerdp_get_logon_error_info_type(type);
 
@@ -377,16 +382,16 @@ static int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* pEntryPoints)
 int main(int argc, char* argv[])
 {
 	int rc = -1;
-	DWORD status;
-	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
-	rdpContext* context;
+	RDP_CLIENT_ENTRY_POINTS clientEntryPoints = { 0 };
+
 	RdpClientEntry(&clientEntryPoints);
-	context = freerdp_client_context_new(&clientEntryPoints);
+	rdpContext* context = freerdp_client_context_new(&clientEntryPoints);
 
 	if (!context)
 		goto fail;
 
-	status = freerdp_client_settings_parse_command_line(context->settings, argc, argv, FALSE);
+	const int status =
+	    freerdp_client_settings_parse_command_line(context->settings, argc, argv, FALSE);
 	if (status)
 	{
 		rc = freerdp_client_settings_command_line_status_print(context->settings, status, argc,
@@ -400,7 +405,8 @@ int main(int argc, char* argv[])
 	if (freerdp_client_start(context) != 0)
 		goto fail;
 
-	rc = tf_client_thread_proc(context->instance);
+	const DWORD res = tf_client_thread_proc(context->instance);
+	rc = (int)res;
 
 	if (freerdp_client_stop(context) != 0)
 		rc = -1;

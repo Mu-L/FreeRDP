@@ -26,12 +26,17 @@
 
 #include <winpr/shell.h>
 
+/** The command line name of the channel
+ *
+ *  \since version 3.0.0
+ */
 #define CLIPRDR_CHANNEL_NAME "cliprdr"
 #define CLIPRDR_SVC_CHANNEL_NAME "cliprdr"
 
 /* CLIPRDR_HEADER.msgType */
 typedef enum
 {
+	CB_TYPE_NONE = 0x0000, /** @since version 3.10.0 */
 	CB_MONITOR_READY = 0x0001,
 	CB_FORMAT_LIST = 0x0002,
 	CB_FORMAT_LIST_RESPONSE = 0x0003,

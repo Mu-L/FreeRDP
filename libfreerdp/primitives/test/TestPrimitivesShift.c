@@ -21,10 +21,10 @@
 
 static BOOL test_lShift_16s_func(void)
 {
-	pstatus_t status;
+	pstatus_t status = 0;
 	INT16 ALIGN(src[FUNC_TEST_SIZE + 3]);
 	INT16 ALIGN(d1[FUNC_TEST_SIZE + 3]);
-	UINT32 val;
+	UINT32 val = 0;
 	winpr_RAND(&val, sizeof(val));
 	winpr_RAND(src, sizeof(src));
 	val = val % 16;
@@ -66,10 +66,10 @@ static BOOL test_lShift_16s_func(void)
 
 static BOOL test_lShift_16u_func(void)
 {
-	pstatus_t status;
+	pstatus_t status = 0;
 	UINT16 ALIGN(src[FUNC_TEST_SIZE + 3]);
 	UINT16 ALIGN(d1[FUNC_TEST_SIZE + 3]);
-	UINT32 val;
+	UINT32 val = 0;
 	winpr_RAND(&val, sizeof(val));
 	winpr_RAND(src, sizeof(src));
 	val = val % 16;
@@ -112,10 +112,10 @@ static BOOL test_lShift_16u_func(void)
 
 static BOOL test_rShift_16s_func(void)
 {
-	pstatus_t status;
+	pstatus_t status = 0;
 	INT16 ALIGN(src[FUNC_TEST_SIZE + 3]);
 	INT16 ALIGN(d1[FUNC_TEST_SIZE + 3]);
-	UINT32 val;
+	UINT32 val = 0;
 	winpr_RAND(&val, sizeof(val));
 	winpr_RAND(src, sizeof(src));
 	val = val % 16;
@@ -158,10 +158,10 @@ static BOOL test_rShift_16s_func(void)
 
 static BOOL test_rShift_16u_func(void)
 {
-	pstatus_t status;
+	pstatus_t status = 0;
 	UINT16 ALIGN(src[FUNC_TEST_SIZE + 3]);
 	UINT16 ALIGN(d1[FUNC_TEST_SIZE + 3]);
-	UINT32 val;
+	UINT32 val = 0;
 	winpr_RAND(&val, sizeof(val));
 	winpr_RAND(src, sizeof(src));
 	val = val % 16;
@@ -203,14 +203,13 @@ static BOOL test_rShift_16u_func(void)
 
 static BOOL test_ShiftWrapper_16s_func(void)
 {
-	pstatus_t status;
-	INT16 ALIGN(src[FUNC_TEST_SIZE + 3]);
-	INT16 ALIGN(d1[FUNC_TEST_SIZE + 3]);
-	UINT32 tmp;
-	INT32 val;
+	pstatus_t status = 0;
+	INT16 ALIGN(src[FUNC_TEST_SIZE + 3]) = { 0 };
+	INT16 ALIGN(d1[FUNC_TEST_SIZE + 3]) = { 0 };
+	UINT32 tmp = 0;
 	winpr_RAND(&tmp, sizeof(tmp));
 	winpr_RAND(src, sizeof(src));
-	val = tmp % 16;
+	INT32 val = WINPR_ASSERTING_INT_CAST(int32_t, tmp % 16);
 
 	/* Negative tests */
 	status = generic->shiftC_16s(src + 1, 16, d1 + 1, FUNC_TEST_SIZE);
@@ -270,14 +269,13 @@ static BOOL test_ShiftWrapper_16s_func(void)
 
 static BOOL test_ShiftWrapper_16u_func(void)
 {
-	pstatus_t status;
-	UINT16 ALIGN(src[FUNC_TEST_SIZE + 3]);
-	UINT16 ALIGN(d1[FUNC_TEST_SIZE + 3]);
-	UINT32 tmp;
-	INT32 val;
+	pstatus_t status = 0;
+	UINT16 ALIGN(src[FUNC_TEST_SIZE + 3]) = { 0 };
+	UINT16 ALIGN(d1[FUNC_TEST_SIZE + 3]) = { 0 };
+	UINT32 tmp = 0;
 	winpr_RAND(&tmp, sizeof(tmp));
 	winpr_RAND(src, sizeof(src));
-	val = tmp % 16;
+	INT32 val = WINPR_ASSERTING_INT_CAST(int32_t, tmp % 16);
 
 	/* Negative */
 	status = generic->shiftC_16u(src + 1, 16, d1 + 1, FUNC_TEST_SIZE);
@@ -337,8 +335,9 @@ static BOOL test_ShiftWrapper_16u_func(void)
 /* ------------------------------------------------------------------------- */
 static BOOL test_lShift_16s_speed(void)
 {
-	UINT32 val;
-	INT16 ALIGN(src[MAX_TEST_SIZE + 1]), ALIGN(dst[MAX_TEST_SIZE + 1]);
+	UINT32 val = 0;
+	INT16 ALIGN(src[MAX_TEST_SIZE + 1]);
+	INT16 ALIGN(dst[MAX_TEST_SIZE + 1]);
 	winpr_RAND(src, sizeof(src));
 	winpr_RAND(&val, sizeof(val));
 
@@ -357,8 +356,9 @@ static BOOL test_lShift_16s_speed(void)
 /* ------------------------------------------------------------------------- */
 static BOOL test_lShift_16u_speed(void)
 {
-	UINT32 val;
-	UINT16 ALIGN(src[MAX_TEST_SIZE + 1]), ALIGN(dst[MAX_TEST_SIZE + 1]);
+	UINT32 val = 0;
+	UINT16 ALIGN(src[MAX_TEST_SIZE + 1]);
+	UINT16 ALIGN(dst[MAX_TEST_SIZE + 1]);
 	winpr_RAND(&val, sizeof(val));
 	winpr_RAND(src, sizeof(src));
 
@@ -377,8 +377,9 @@ static BOOL test_lShift_16u_speed(void)
 /* ------------------------------------------------------------------------- */
 static BOOL test_rShift_16s_speed(void)
 {
-	UINT32 val;
-	INT16 ALIGN(src[MAX_TEST_SIZE + 1]), ALIGN(dst[MAX_TEST_SIZE + 1]);
+	UINT32 val = 0;
+	INT16 ALIGN(src[MAX_TEST_SIZE + 1]);
+	INT16 ALIGN(dst[MAX_TEST_SIZE + 1]);
 	winpr_RAND(src, sizeof(src));
 	winpr_RAND(&val, sizeof(val));
 
@@ -397,8 +398,9 @@ static BOOL test_rShift_16s_speed(void)
 /* ------------------------------------------------------------------------- */
 static BOOL test_rShift_16u_speed(void)
 {
-	UINT32 val;
-	UINT16 ALIGN(src[MAX_TEST_SIZE + 1]), ALIGN(dst[MAX_TEST_SIZE + 1]);
+	UINT32 val = 0;
+	UINT16 ALIGN(src[MAX_TEST_SIZE + 1]);
+	UINT16 ALIGN(dst[MAX_TEST_SIZE + 1]);
 	winpr_RAND(&val, sizeof(val));
 	winpr_RAND(src, sizeof(src));
 

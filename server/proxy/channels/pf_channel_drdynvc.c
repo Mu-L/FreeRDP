@@ -232,10 +232,12 @@ static DynvcReadResult dynvc_read_varInt(wLog* log, wStream* s, size_t len, UINT
 static PfChannelResult DynvcTrackerPeekFn(ChannelStateTracker* tracker, BOOL firstPacket,
                                           BOOL lastPacket)
 {
-	BYTE cmd, byte0;
-	wStream *s, sbuffer;
-	BOOL haveChannelId;
-	BOOL haveLength;
+	BYTE cmd = 0;
+	BYTE byte0 = 0;
+	wStream* s = NULL;
+	wStream sbuffer;
+	BOOL haveChannelId = 0;
+	BOOL haveLength = 0;
 	UINT64 dynChannelId = 0;
 	UINT64 Length = 0;
 	pServerDynamicChannelContext* dynChannel = NULL;
@@ -309,9 +311,9 @@ static PfChannelResult DynvcTrackerPeekFn(ChannelStateTracker* tracker, BOOL fir
 		 */
 		dynChannel = (pServerDynamicChannelContext*)HashTable_GetItemValue(
 		    dynChannelContext->channels, &dynChannelId);
-		if (cmd != CREATE_REQUEST_PDU || !isBackData)
+		if ((cmd != CREATE_REQUEST_PDU) || !isBackData)
 		{
-			if (!dynChannel)
+			if (!dynChannel || (dynChannel->openStatus == CHANNEL_OPENSTATE_CLOSED))
 			{
 				/* we've not found the target channel, so we drop this chunk, plus all the rest of
 				 * the packet */
@@ -348,7 +350,7 @@ static PfChannelResult DynvcTrackerPeekFn(ChannelStateTracker* tracker, BOOL fir
 
 		case CREATE_REQUEST_PDU:
 		{
-			UINT32 creationStatus;
+			UINT32 creationStatus = 0;
 
 			/* we only want the full packet */
 			if (!lastPacket)
@@ -361,11 +363,11 @@ static PfChannelResult DynvcTrackerPeekFn(ChannelStateTracker* tracker, BOOL fir
 				const size_t nameLen = Stream_GetRemainingLength(s);
 
 				const size_t len = strnlen(name, nameLen);
-				if ((len == 0) || (len == nameLen))
+				if ((len == 0) || (len == nameLen) || (dynChannelId > UINT16_MAX))
 					return PF_CHANNEL_RESULT_ERROR;
 
 				wStream* currentPacket = channelTracker_getCurrentPacket(tracker);
-				dev.channel_id = dynChannelId;
+				dev.channel_id = (UINT16)dynChannelId;
 				dev.channel_name = name;
 				dev.data = Stream_Buffer(s);
 				dev.data_len = Stream_GetPosition(currentPacket);
@@ -390,7 +392,7 @@ static PfChannelResult DynvcTrackerPeekFn(ChannelStateTracker* tracker, BOOL fir
 					return PF_CHANNEL_RESULT_DROP; /* Silently drop */
 
 				dynChannel = DynamicChannelContext_new(dynChannelContext->log, pdata->ps, name,
-				                                       dynChannelId);
+				                                       (UINT32)dynChannelId);
 				if (!dynChannel)
 				{
 					WLog_Print(dynChannelContext->log, WLOG_ERROR,
@@ -411,6 +413,7 @@ static PfChannelResult DynvcTrackerPeekFn(ChannelStateTracker* tracker, BOOL fir
 
 				dynChannel->openStatus = CHANNEL_OPENSTATE_WAITING_OPEN_STATUS;
 
+				// NOLINTNEXTLINE(clang-analyzer-unix.Malloc): HashTable_Insert owns dynChannel
 				return channelTracker_flushCurrent(tracker, firstPacket, lastPacket, FALSE);
 			}
 
@@ -490,7 +493,9 @@ static PfChannelResult DynvcTrackerPeekFn(ChannelStateTracker* tracker, BOOL fir
 		WLog_Print(dynChannelContext->log, WLOG_DEBUG,
 		           "DynvcTracker(%s [%s]): %s DATA_FIRST currentPacketLength=%" PRIu64 "",
 		           dynChannel->channelName, drdynvc_get_packet_type(cmd), direction, Length);
-		trackerState->currentDataLength = Length;
+		if (Length > UINT32_MAX)
+			return PF_CHANNEL_RESULT_ERROR;
+		trackerState->currentDataLength = (UINT32)Length;
 		trackerState->CurrentDataReceived = 0;
 		trackerState->CurrentDataFragments = 0;
 
@@ -557,7 +562,7 @@ static PfChannelResult DynvcTrackerPeekFn(ChannelStateTracker* tracker, BOOL fir
 		}
 	}
 
-	PfChannelResult result;
+	PfChannelResult result = PF_CHANNEL_RESULT_ERROR;
 	switch (dynChannel->channelMode)
 	{
 		case PF_UTILS_CHANNEL_PASSTHROUGH:

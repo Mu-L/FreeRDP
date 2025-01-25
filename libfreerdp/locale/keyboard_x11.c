@@ -31,7 +31,6 @@
 static BOOL parse_xkb_rule_names(char* xkb_rule, unsigned long num_bytes, char** layout,
                                  char** variant)
 {
-	size_t i, index;
 	/* Sample output for "Canadian Multilingual Standard"
 	 *
 	 * _XKB_RULES_NAMES_BACKUP(STRING) = "xorg", "pc105", "ca", "multi", "magic"
@@ -47,7 +46,7 @@ static BOOL parse_xkb_rule_names(char* xkb_rule, unsigned long num_bytes, char**
 	 * “eurosign:e,lv3:ralt_switch,grp:rctrl_toggle”
 	 *         - three options)
 	 */
-	for (i = 0, index = 0; i < num_bytes; i++, index++)
+	for (size_t i = 0, index = 0; i < num_bytes; i++, index++)
 	{
 		char* ptr = xkb_rule + i;
 
@@ -83,21 +82,20 @@ static DWORD kbd_layout_id_from_x_property(Display* display, Window root, char* 
 {
 	char* layout = NULL;
 	char* variant = NULL;
-	char* rule;
-	Atom property = None;
+	char* rule = NULL;
 	Atom type = None;
 	int item_size = 0;
 	unsigned long items = 0;
 	unsigned long unread_items = 0;
 	DWORD layout_id = 0;
 
-	property = XInternAtom(display, property_name, False);
+	Atom property = XInternAtom(display, property_name, False);
+	if (property == None)
+		return 0;
 
 	if (XGetWindowProperty(display, root, property, 0, 1024, False, XA_STRING, &type, &item_size,
 	                       &items, &unread_items, (unsigned char**)&rule) != Success)
-	{
 		return 0;
-	}
 
 	if (type != XA_STRING || item_size != 8 || unread_items != 0)
 	{

@@ -121,11 +121,15 @@ fail:
 static EVP_PKEY* evp_pkey_utils_from_pem(const char* data, size_t len, BOOL fromFile)
 {
 	EVP_PKEY* evp = NULL;
-	BIO* bio;
+	BIO* bio = NULL;
 	if (fromFile)
 		bio = BIO_new_file(data, "rb");
 	else
-		bio = BIO_new_mem_buf(data, len);
+	{
+		if (len > INT_MAX)
+			return NULL;
+		bio = BIO_new_mem_buf(data, (int)len);
+	}
 
 	if (!bio)
 	{
@@ -371,7 +375,7 @@ size_t freerdp_key_get_bits(const rdpPrivateKey* key)
 	rc = EVP_PKEY_get_bits(key->evp);
 #endif
 
-	return rc;
+	return WINPR_ASSERTING_INT_CAST(size_t, rc);
 }
 
 BOOL freerdp_key_generate(rdpPrivateKey* key, size_t key_length)
@@ -426,7 +430,10 @@ BOOL freerdp_key_generate(rdpPrivateKey* key, size_t key_length)
 	if (EVP_PKEY_keygen_init(pctx) != 1)
 		goto fail;
 
-	if (EVP_PKEY_CTX_set_rsa_keygen_bits(pctx, key_length) != 1)
+	if (key_length > INT_MAX)
+		goto fail;
+
+	if (EVP_PKEY_CTX_set_rsa_keygen_bits(pctx, (int)key_length) != 1)
 		goto fail;
 
 	EVP_PKEY_free(key->evp);
@@ -442,7 +449,7 @@ fail:
 	return rc;
 }
 
-char* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM param, size_t* plength)
+BYTE* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM param, size_t* plength)
 {
 	BYTE* buf = NULL;
 
@@ -482,13 +489,19 @@ char* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM par
 		switch (param)
 		{
 			case FREERDP_KEY_PARAM_RSA_D:
+#if OPENSSL_VERSION_NUMBER >= 0x10101007L
 				cbn = RSA_get0_d(rsa);
+#endif
 				break;
 			case FREERDP_KEY_PARAM_RSA_E:
+#if OPENSSL_VERSION_NUMBER >= 0x10101007L
 				cbn = RSA_get0_e(rsa);
+#endif
 				break;
 			case FREERDP_KEY_PARAM_RSA_N:
+#if OPENSSL_VERSION_NUMBER >= 0x10101007L
 				cbn = RSA_get0_n(rsa);
+#endif
 				break;
 			default:
 				return NULL;
@@ -517,11 +530,11 @@ char* freerdp_key_get_param(const rdpPrivateKey* key, enum FREERDP_KEY_PARAM par
 		buf = NULL;
 	}
 	else
-		*plength = length;
+		*plength = WINPR_ASSERTING_INT_CAST(size_t, length);
 
 fail:
 	BN_free(bn);
-	return (char*)buf;
+	return buf;
 }
 
 WINPR_DIGEST_CTX* freerdp_key_digest_sign(rdpPrivateKey* key, WINPR_MD_TYPE digest)
