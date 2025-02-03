@@ -21,6 +21,8 @@
 #error "This file must only be included with MIT kerberos"
 #endif
 
+#include <string.h>
+
 #include <winpr/path.h>
 #include <winpr/wlog.h>
 #include <winpr/endian.h>
@@ -34,8 +36,8 @@
 static char* create_temporary_file(void)
 {
 	BYTE buffer[32];
-	char* hex;
-	char* path;
+	char* hex = NULL;
+	char* path = NULL;
 
 	winpr_RAND(buffer, sizeof(buffer));
 	hex = winpr_BinToHexString(buffer, sizeof(buffer), FALSE);
@@ -80,6 +82,7 @@ krb5_prompt_type krb5glue_get_prompt_type(krb5_context ctx, krb5_prompt prompts[
 {
 	WINPR_ASSERT(ctx);
 	WINPR_ASSERT(prompts);
+	WINPR_UNUSED(prompts);
 
 	krb5_prompt_type* types = krb5_get_prompt_types(ctx);
 	return types ? types[index] : 0;
@@ -111,7 +114,7 @@ BOOL krb5glue_authenticator_validate_chksum(krb5glue_authenticator authenticator
 	if (!authenticator || !authenticator->checksum ||
 	    authenticator->checksum->checksum_type != cksumtype || authenticator->checksum->length < 24)
 		return FALSE;
-	Data_Read_UINT32((authenticator->checksum->contents + 20), (*flags));
+	*flags = winpr_Data_Get_UINT32((authenticator->checksum->contents + 20));
 	return TRUE;
 }
 
@@ -171,7 +174,7 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 			if (rv)
 				goto cleanup;
 		}
-		if (krb_settings->kdcUrl)
+		if (krb_settings->kdcUrl && (strnlen(krb_settings->kdcUrl, 2) > 0))
 		{
 			const char* names[4] = { 0 };
 			char* realm = NULL;
@@ -183,7 +186,10 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 
 			rv = ENOMEM;
 			if (winpr_asprintf(&kdc_url, &size, "https://%s/KdcProxy", krb_settings->kdcUrl) <= 0)
+			{
+				free(kdc_url);
 				goto cleanup;
+			}
 
 			realm = calloc(princ->realm.length + 1, 1);
 			if (!realm)
@@ -207,15 +213,18 @@ krb5_error_code krb5glue_get_init_creds(krb5_context ctx, krb5_principal princ, 
 			free(kdc_url);
 			free(realm);
 
-			if ((rv = profile_flush_to_file(profile, tmp_profile_path)))
+			long lrv = profile_flush_to_file(profile, tmp_profile_path);
+			if (lrv)
 				goto cleanup;
 
-			profile_release(profile);
+			profile_abandon(profile);
 			profile = NULL;
-			if ((rv = profile_init_path(tmp_profile_path, &profile)))
+			lrv = profile_init_path(tmp_profile_path, &profile);
+			if (lrv)
 				goto cleanup;
 
-			if ((rv = krb5_init_context_profile(profile, 0, &ctx)))
+			rv = krb5_init_context_profile(profile, 0, &ctx);
+			if (rv)
 				goto cleanup;
 			is_temp_ctx = TRUE;
 		}
@@ -239,7 +248,7 @@ cleanup:
 	krb5_get_init_creds_opt_free(ctx, gic_opt);
 	if (is_temp_ctx)
 		krb5_free_context(ctx);
-	profile_release(profile);
+	profile_abandon(profile);
 	winpr_DeleteFile(tmp_profile_path);
 	free(tmp_profile_path);
 

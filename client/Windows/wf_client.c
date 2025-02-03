@@ -22,6 +22,7 @@
 #include <freerdp/config.h>
 
 #include <winpr/windows.h>
+#include <winpr/library.h>
 
 #include <winpr/crt.h>
 #include <winpr/assert.h>
@@ -81,7 +82,6 @@ static BOOL wf_has_console(void)
 
 static BOOL wf_end_paint(rdpContext* context)
 {
-	int i;
 	rdpGdi* gdi;
 	int ninvalid;
 	RECT updateRect;
@@ -99,7 +99,7 @@ static BOOL wf_end_paint(rdpContext* context)
 
 	region16_init(&invalidRegion);
 
-	for (i = 0; i < ninvalid; i++)
+	for (int i = 0; i < ninvalid; i++)
 	{
 		invalidRect.left = cinvalid[i].x;
 		invalidRect.top = cinvalid[i].y;
@@ -264,16 +264,19 @@ static BOOL wf_pre_connect(freerdp* instance)
 
 	if (desktopWidth != freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth))
 	{
-		freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, desktopWidth);
+		if (!freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, desktopWidth))
+			return FALSE;
 	}
 
 	if (desktopHeight != freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight))
 	{
-		freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, desktopHeight);
+		if (!freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, desktopHeight))
+			return FALSE;
 	}
 
 	rc = freerdp_keyboard_init(freerdp_settings_get_uint32(settings, FreeRDP_KeyboardLayout));
-	freerdp_settings_set_uint32(settings, FreeRDP_KeyboardLayout, rc);
+	if (!freerdp_settings_set_uint32(settings, FreeRDP_KeyboardLayout, rc))
+		return FALSE;
 	PubSub_SubscribeChannelConnected(instance->context->pubSub, wf_OnChannelConnectedEventHandler);
 	PubSub_SubscribeChannelDisconnected(instance->context->pubSub,
 	                                    wf_OnChannelDisconnectedEventHandler);
@@ -523,15 +526,15 @@ static BOOL wf_authenticate_ex(freerdp* instance, char** username, char** passwo
 
 	if (*username)
 	{
-		ConvertUtf8ToWChar(*username, UserNameW, ARRAYSIZE(UserNameW));
-		ConvertUtf8ToWChar(*username, UserW, ARRAYSIZE(UserW));
+		(void)ConvertUtf8ToWChar(*username, UserNameW, ARRAYSIZE(UserNameW));
+		(void)ConvertUtf8ToWChar(*username, UserW, ARRAYSIZE(UserW));
 	}
 
 	if (*password)
-		ConvertUtf8ToWChar(*password, PasswordW, ARRAYSIZE(PasswordW));
+		(void)ConvertUtf8ToWChar(*password, PasswordW, ARRAYSIZE(PasswordW));
 
 	if (*domain)
-		ConvertUtf8ToWChar(*domain, DomainW, ARRAYSIZE(DomainW));
+		(void)ConvertUtf8ToWChar(*domain, DomainW, ARRAYSIZE(DomainW));
 
 	if (_wcsnlen(PasswordW, ARRAYSIZE(PasswordW)) == 0)
 	{
@@ -563,9 +566,10 @@ static BOOL wf_authenticate_ex(freerdp* instance, char** username, char** passwo
 				CHAR UserName[CREDUI_MAX_USERNAME_LENGTH + 1] = { 0 };
 				CHAR Domain[CREDUI_MAX_DOMAIN_TARGET_LENGTH + 1] = { 0 };
 
-				ConvertWCharNToUtf8(UserNameW, ARRAYSIZE(UserNameW), UserName, ARRAYSIZE(UserName));
-				ConvertWCharNToUtf8(UserW, ARRAYSIZE(UserW), User, ARRAYSIZE(User));
-				ConvertWCharNToUtf8(DomainW, ARRAYSIZE(DomainW), Domain, ARRAYSIZE(Domain));
+				(void)ConvertWCharNToUtf8(UserNameW, ARRAYSIZE(UserNameW), UserName,
+				                          ARRAYSIZE(UserName));
+				(void)ConvertWCharNToUtf8(UserW, ARRAYSIZE(UserW), User, ARRAYSIZE(User));
+				(void)ConvertWCharNToUtf8(DomainW, ARRAYSIZE(DomainW), Domain, ARRAYSIZE(Domain));
 				WLog_ERR(TAG, "Failed to parse UserName: %s into User: %s Domain: %s", UserName,
 				         User, Domain);
 				return FALSE;
@@ -1023,7 +1027,7 @@ static DWORD WINAPI wf_client_thread(LPVOID lpParam)
 	rdpSettings* settings = context->settings;
 	WINPR_ASSERT(settings);
 
-	while (1)
+	while (!freerdp_shall_disconnect_context(instance->context))
 	{
 		HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
 		DWORD nCount = 0;
@@ -1046,7 +1050,9 @@ static DWORD WINAPI wf_client_thread(LPVOID lpParam)
 			nCount += tmp;
 		}
 
-		if (MsgWaitForMultipleObjects(nCount, handles, FALSE, 1000, QS_ALLINPUT) == WAIT_FAILED)
+		DWORD status = MsgWaitForMultipleObjectsEx(nCount, handles, 5 * 1000, QS_ALLINPUT,
+		                                           MWMO_ALERTABLE | MWMO_INPUTAVAILABLE);
+		if (status == WAIT_FAILED)
 		{
 			WLog_ERR(TAG, "wfreerdp_run: WaitForMultipleObjects failed: 0x%08lX", GetLastError());
 			break;
@@ -1336,7 +1342,8 @@ static BOOL wfreerdp_client_new(freerdp* instance, rdpContext* context)
 	instance->AuthenticateEx = wf_authenticate_ex;
 
 #ifdef WITH_WINDOWS_CERT_STORE
-	freerdp_settings_set_bool(context->settings, FreeRDP_CertificateCallbackPreferPEM, TRUE);
+	if (!freerdp_settings_set_bool(context->settings, FreeRDP_CertificateCallbackPreferPEM, TRUE))
+		return FALSE;
 #endif
 
 	if (!wfc->isConsole)
@@ -1395,9 +1402,9 @@ static int wfreerdp_client_start(rdpContext* context)
 		if (module)
 		{
 			GetDpiForWindow_t pGetDpiForWindow =
-			    (GetDpiForWindow_t)GetProcAddress(module, "GetDpiForWindow");
+			    GetProcAddressAs(module, "GetDpiForWindow", GetDpiForWindow_t);
 			SetProcessDPIAware_t pSetProcessDPIAware =
-			    (SetProcessDPIAware_t)GetProcAddress(module, "SetProcessDPIAware");
+			    GetProcAddressAs(module, "SetProcessDPIAware", SetProcessDPIAware_t);
 			if (pGetDpiForWindow && pSetProcessDPIAware)
 			{
 				const UINT dpiAwareness = pGetDpiForWindow(hWndParent);
@@ -1459,8 +1466,8 @@ static int wfreerdp_client_stop(rdpContext* context)
 	if (wfc->keyboardThread)
 	{
 		PostThreadMessage(wfc->keyboardThreadId, WM_QUIT, 0, 0);
-		WaitForSingleObject(wfc->keyboardThread, INFINITE);
-		CloseHandle(wfc->keyboardThread);
+		(void)WaitForSingleObject(wfc->keyboardThread, INFINITE);
+		(void)CloseHandle(wfc->keyboardThread);
 		wfc->keyboardThread = NULL;
 		wfc->keyboardThreadId = 0;
 	}

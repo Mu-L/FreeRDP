@@ -73,7 +73,6 @@ const char* ClipboardGetFormatIdString(UINT32 formatId)
 static wClipboardFormat* ClipboardFindFormat(wClipboard* clipboard, UINT32 formatId,
                                              const char* name)
 {
-	UINT32 index;
 	wClipboardFormat* format = NULL;
 
 	if (!clipboard)
@@ -81,25 +80,27 @@ static wClipboardFormat* ClipboardFindFormat(wClipboard* clipboard, UINT32 forma
 
 	if (formatId)
 	{
-		for (index = 0; index < clipboard->numFormats; index++)
+		for (UINT32 index = 0; index < clipboard->numFormats; index++)
 		{
-			if (formatId == clipboard->formats[index].formatId)
+			wClipboardFormat* cformat = &clipboard->formats[index];
+			if (formatId == cformat->formatId)
 			{
-				format = &clipboard->formats[index];
+				format = cformat;
 				break;
 			}
 		}
 	}
 	else if (name)
 	{
-		for (index = 0; index < clipboard->numFormats; index++)
+		for (UINT32 index = 0; index < clipboard->numFormats; index++)
 		{
-			if (!clipboard->formats[index].formatName)
+			wClipboardFormat* cformat = &clipboard->formats[index];
+			if (!cformat->formatName)
 				continue;
 
-			if (strcmp(name, clipboard->formats[index].formatName) == 0)
+			if (strcmp(name, cformat->formatName) == 0)
 			{
-				format = &clipboard->formats[index];
+				format = cformat;
 				break;
 			}
 		}
@@ -161,7 +162,7 @@ BOOL ClipboardEmpty(wClipboard* clipboard)
 
 	if (clipboard->data)
 	{
-		free((void*)clipboard->data);
+		free(clipboard->data);
 		clipboard->data = NULL;
 	}
 
@@ -181,9 +182,8 @@ UINT32 ClipboardCountRegisteredFormats(wClipboard* clipboard)
 
 UINT32 ClipboardGetRegisteredFormatIds(wClipboard* clipboard, UINT32** ppFormatIds)
 {
-	UINT32 index;
-	UINT32* pFormatIds;
-	wClipboardFormat* format;
+	UINT32* pFormatIds = NULL;
+	wClipboardFormat* format = NULL;
 
 	if (!clipboard)
 		return 0;
@@ -203,7 +203,7 @@ UINT32 ClipboardGetRegisteredFormatIds(wClipboard* clipboard, UINT32** ppFormatI
 		*ppFormatIds = pFormatIds;
 	}
 
-	for (index = 0; index < clipboard->numFormats; index++)
+	for (UINT32 index = 0; index < clipboard->numFormats; index++)
 	{
 		format = &(clipboard->formats[index]);
 		pFormatIds[index] = format->formatId;
@@ -214,7 +214,7 @@ UINT32 ClipboardGetRegisteredFormatIds(wClipboard* clipboard, UINT32** ppFormatI
 
 UINT32 ClipboardRegisterFormat(wClipboard* clipboard, const char* name)
 {
-	wClipboardFormat* format;
+	wClipboardFormat* format = NULL;
 
 	if (!clipboard)
 		return 0;
@@ -227,7 +227,7 @@ UINT32 ClipboardRegisterFormat(wClipboard* clipboard, const char* name)
 	if ((clipboard->numFormats + 1) >= clipboard->maxFormats)
 	{
 		UINT32 numFormats = clipboard->maxFormats * 2;
-		wClipboardFormat* tmpFormat;
+		wClipboardFormat* tmpFormat = NULL;
 		tmpFormat =
 		    (wClipboardFormat*)realloc(clipboard->formats, numFormats * sizeof(wClipboardFormat));
 
@@ -257,9 +257,9 @@ UINT32 ClipboardRegisterFormat(wClipboard* clipboard, const char* name)
 BOOL ClipboardRegisterSynthesizer(wClipboard* clipboard, UINT32 formatId, UINT32 syntheticId,
                                   CLIPBOARD_SYNTHESIZE_FN pfnSynthesize)
 {
-	UINT32 index;
-	wClipboardFormat* format;
-	wClipboardSynthesizer* synthesizer;
+	UINT32 index = 0;
+	wClipboardFormat* format = NULL;
+	wClipboardSynthesizer* synthesizer = NULL;
 
 	if (!clipboard)
 		return FALSE;
@@ -276,7 +276,7 @@ BOOL ClipboardRegisterSynthesizer(wClipboard* clipboard, UINT32 formatId, UINT32
 
 	if (!synthesizer)
 	{
-		wClipboardSynthesizer* tmpSynthesizer;
+		wClipboardSynthesizer* tmpSynthesizer = NULL;
 		UINT32 numSynthesizers = format->numSynthesizers + 1;
 		tmpSynthesizer = (wClipboardSynthesizer*)realloc(
 		    format->synthesizers, numSynthesizers * sizeof(wClipboardSynthesizer));
@@ -297,8 +297,8 @@ BOOL ClipboardRegisterSynthesizer(wClipboard* clipboard, UINT32 formatId, UINT32
 
 UINT32 ClipboardCountFormats(wClipboard* clipboard)
 {
-	UINT32 count;
-	wClipboardFormat* format;
+	UINT32 count = 0;
+	wClipboardFormat* format = NULL;
 
 	if (!clipboard)
 		return 0;
@@ -314,11 +314,10 @@ UINT32 ClipboardCountFormats(wClipboard* clipboard)
 
 UINT32 ClipboardGetFormatIds(wClipboard* clipboard, UINT32** ppFormatIds)
 {
-	UINT32 index;
-	UINT32 count;
-	UINT32* pFormatIds;
-	wClipboardFormat* format;
-	wClipboardSynthesizer* synthesizer;
+	UINT32 count = 0;
+	UINT32* pFormatIds = NULL;
+	wClipboardFormat* format = NULL;
+	wClipboardSynthesizer* synthesizer = NULL;
 
 	if (!clipboard)
 		return 0;
@@ -347,7 +346,7 @@ UINT32 ClipboardGetFormatIds(wClipboard* clipboard, UINT32** ppFormatIds)
 
 	pFormatIds[0] = format->formatId;
 
-	for (index = 1; index < count; index++)
+	for (UINT32 index = 1; index < count; index++)
 	{
 		synthesizer = &(format->synthesizers[index - 1]);
 		pFormatIds[index] = synthesizer->syntheticId;
@@ -372,7 +371,7 @@ static void ClipboardUninitFormats(wClipboard* clipboard)
 static BOOL ClipboardInitFormats(wClipboard* clipboard)
 {
 	UINT32 formatId = 0;
-	wClipboardFormat* format;
+	wClipboardFormat* format = NULL;
 
 	if (!clipboard)
 		return FALSE;
@@ -400,7 +399,7 @@ error:
 
 UINT32 ClipboardGetFormatId(wClipboard* clipboard, const char* name)
 {
-	wClipboardFormat* format;
+	wClipboardFormat* format = NULL;
 
 	if (!clipboard)
 		return 0;
@@ -415,7 +414,7 @@ UINT32 ClipboardGetFormatId(wClipboard* clipboard, const char* name)
 
 const char* ClipboardGetFormatName(wClipboard* clipboard, UINT32 formatId)
 {
-	wClipboardFormat* format;
+	wClipboardFormat* format = NULL;
 
 	if (!clipboard)
 		return NULL;
@@ -434,8 +433,8 @@ void* ClipboardGetData(wClipboard* clipboard, UINT32 formatId, UINT32* pSize)
 	UINT32 DstSize = 0;
 	void* pSrcData = NULL;
 	void* pDstData = NULL;
-	wClipboardFormat* format;
-	wClipboardSynthesizer* synthesizer;
+	wClipboardFormat* format = NULL;
+	wClipboardSynthesizer* synthesizer = NULL;
 
 	if (!clipboard)
 		return NULL;
@@ -450,7 +449,7 @@ void* ClipboardGetData(wClipboard* clipboard, UINT32 formatId, UINT32* pSize)
 		return NULL;
 
 	SrcSize = clipboard->size;
-	pSrcData = (void*)clipboard->data;
+	pSrcData = clipboard->data;
 
 	if (formatId == format->formatId)
 	{
@@ -481,7 +480,7 @@ void* ClipboardGetData(wClipboard* clipboard, UINT32 formatId, UINT32* pSize)
 
 BOOL ClipboardSetData(wClipboard* clipboard, UINT32 formatId, const void* data, UINT32 size)
 {
-	wClipboardFormat* format;
+	wClipboardFormat* format = NULL;
 
 	if (!clipboard)
 		return FALSE;
@@ -491,14 +490,33 @@ BOOL ClipboardSetData(wClipboard* clipboard, UINT32 formatId, const void* data, 
 	if (!format)
 		return FALSE;
 
-	free((void*)clipboard->data);
-	clipboard->data = malloc(size);
+	free(clipboard->data);
+
+	clipboard->data = calloc(size + sizeof(WCHAR), sizeof(char));
 
 	if (!clipboard->data)
 		return FALSE;
 
 	memcpy(clipboard->data, data, size);
-	clipboard->size = size;
+
+	/* For string values we don´t know if they are '\0' terminated.
+	 * so set the size to the full length in bytes (e.g. string length + 1)
+	 */
+	switch (formatId)
+	{
+		case CF_TEXT:
+		case CF_OEMTEXT:
+			clipboard->size = (UINT32)(strnlen(clipboard->data, size) + 1UL);
+			break;
+		case CF_UNICODETEXT:
+			clipboard->size =
+			    (UINT32)((_wcsnlen(clipboard->data, size / sizeof(WCHAR)) + 1UL) * sizeof(WCHAR));
+			break;
+		default:
+			clipboard->size = size;
+			break;
+	}
+
 	clipboard->formatId = formatId;
 	clipboard->sequenceNumber++;
 	return TRUE;
@@ -588,7 +606,7 @@ void ClipboardDestroy(wClipboard* clipboard)
 
 	ClipboardUninitFormats(clipboard);
 
-	free((void*)clipboard->data);
+	free(clipboard->data);
 	clipboard->data = NULL;
 	clipboard->size = 0;
 	clipboard->numFormats = 0;
@@ -626,7 +644,7 @@ char* parse_uri_to_local_file(const char* uri, size_t uri_len)
 
 	WLog_VRB(TAG, "processing URI: %.*s", uri_len, uri);
 
-	if ((uri_len <= prefixLen) || strncmp(uri, prefix, prefixLen))
+	if ((uri_len <= prefixLen) || strncmp(uri, prefix, prefixLen) != 0)
 	{
 		WLog_ERR(TAG, "non-'file:' URI schemes are not supported");
 		return NULL;
@@ -676,7 +694,7 @@ char* parse_uri_to_local_file(const char* uri, size_t uri_len)
 			if (is_dos_drive(&uri[prefixLen + 1], uri_len - prefixLen - 1))
 			{
 				// Dos and Windows file URI
-				localName = (const char*)(uri + prefixLen + 1);
+				localName = (uri + prefixLen + 1);
 				localLen = uri_len - prefixLen - 1;
 			}
 			else
@@ -693,7 +711,7 @@ char* parse_uri_to_local_file(const char* uri, size_t uri_len)
 		 *   "file:///path/to/file"
 		 */
 		if ((uri_len < prefixTraditionalLen) ||
-		    strncmp(uri, prefixTraditional, prefixTraditionalLen))
+		    strncmp(uri, prefixTraditional, prefixTraditionalLen) != 0)
 		{
 			WLog_ERR(TAG, "non-'file:' URI schemes are not supported");
 			return NULL;

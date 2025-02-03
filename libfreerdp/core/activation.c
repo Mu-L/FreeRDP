@@ -22,6 +22,7 @@
 #include "settings.h"
 
 #include <winpr/assert.h>
+#include <winpr/cast.h>
 
 #include "activation.h"
 #include "display.h"
@@ -39,13 +40,15 @@ static BOOL rdp_write_synchronize_pdu(wStream* s, const rdpSettings* settings)
 	if (!Stream_CheckAndLogRequiredCapacity(TAG, (s), 4))
 		return FALSE;
 	Stream_Write_UINT16(s, SYNCMSGTYPE_SYNC); /* messageType (2 bytes) */
-	Stream_Write_UINT16(s, PduSource);        /* targetUser (2 bytes) */
+	Stream_Write_UINT16(s,
+	                    WINPR_ASSERTING_INT_CAST(uint16_t, PduSource)); /* targetUser (2 bytes) */
 	return TRUE;
 }
 
 static BOOL rdp_recv_sync_pdu(rdpRdp* rdp, wStream* s, const char* what)
 {
-	UINT16 msgType, targetUser;
+	UINT16 msgType = 0;
+	UINT16 targetUser = 0;
 
 	WINPR_UNUSED(rdp);
 	if (!Stream_CheckAndLogRequiredLengthEx(TAG, WLOG_WARN, s, 4, 1, "%s(%s:%" PRIuz ") %s",
@@ -141,8 +144,9 @@ static BOOL rdp_write_client_control_pdu(wStream* s, UINT16 action, UINT16 grant
 
 BOOL rdp_recv_server_control_pdu(rdpRdp* rdp, wStream* s)
 {
-	UINT16 action, grantId;
-	UINT32 controlId;
+	UINT16 action = 0;
+	UINT16 grantId = 0;
+	UINT32 controlId = 0;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(s);
@@ -235,7 +239,8 @@ BOOL rdp_send_client_control_pdu(rdpRdp* rdp, UINT16 action)
 	return rdp_send_data_pdu(rdp, s, DATA_PDU_TYPE_CONTROL, rdp->mcs->userId);
 }
 
-static BOOL rdp_write_client_persistent_key_list_pdu(wStream* s, RDP_BITMAP_PERSISTENT_INFO* info)
+static BOOL rdp_write_client_persistent_key_list_pdu(wStream* s,
+                                                     const RDP_BITMAP_PERSISTENT_INFO* info)
 {
 	WINPR_ASSERT(s);
 	WINPR_ASSERT(info);
@@ -263,23 +268,18 @@ static BOOL rdp_write_client_persistent_key_list_pdu(wStream* s, RDP_BITMAP_PERS
 
 	for (UINT32 index = 0; index < info->keyCount; index++)
 	{
-		const UINT32 key1 = (UINT32)info->keyList[index];
-		const UINT32 key2 = (UINT32)(info->keyList[index] >> 32);
-		Stream_Write_UINT32(s, key1);
-		Stream_Write_UINT32(s, key2);
+		const UINT64 val = info->keyList[index];
+		Stream_Write_UINT64(s, val);
 	}
 
 	return TRUE;
 }
 
-static UINT32 rdp_load_persistent_key_list(rdpRdp* rdp, UINT64** pKeyList)
+static UINT16 rdp_load_persistent_key_list(rdpRdp* rdp, UINT64** pKeyList)
 {
-	int index;
-	int count;
-	int status;
-	UINT32 keyCount;
+	UINT16 keyCount = 0;
 	UINT64* keyList = NULL;
-	rdpPersistentCache* persistent;
+	rdpPersistentCache* persistent = NULL;
 	rdpSettings* settings = rdp->settings;
 
 	*pKeyList = NULL;
@@ -295,20 +295,23 @@ static UINT32 rdp_load_persistent_key_list(rdpRdp* rdp, UINT64** pKeyList)
 	if (!persistent)
 		return 0;
 
-	status = persistent_cache_open(persistent, settings->BitmapCachePersistFile, FALSE, 0);
+	const int status =
+	    persistent_cache_open(persistent, settings->BitmapCachePersistFile, FALSE, 0);
 
 	if (status < 1)
 		goto error;
 
-	count = persistent_cache_get_count(persistent);
+	const int count = persistent_cache_get_count(persistent);
+	if ((count < 0) || (count > UINT16_MAX))
+		goto error;
 
-	keyCount = (UINT32)count;
-	keyList = (UINT64*)malloc(keyCount * sizeof(UINT64));
+	keyCount = (UINT16)count;
+	keyList = (UINT64*)calloc(keyCount, sizeof(UINT64));
 
 	if (!keyList)
 		goto error;
 
-	for (index = 0; index < count; index++)
+	for (int index = 0; index < count; index++)
 	{
 		PERSISTENT_CACHE_ENTRY cacheEntry = { 0 };
 
@@ -330,15 +333,14 @@ error:
 
 BOOL rdp_send_client_persistent_key_list_pdu(rdpRdp* rdp)
 {
-	UINT32 keyCount;
-	UINT32 keyMaxFrag = 2042;
+	UINT16 keyMaxFrag = 2042;
 	UINT64* keyList = NULL;
-	RDP_BITMAP_PERSISTENT_INFO info;
+	RDP_BITMAP_PERSISTENT_INFO info = { 0 };
+	WINPR_ASSERT(rdp);
 	rdpSettings* settings = rdp->settings;
+	UINT16 keyCount = rdp_load_persistent_key_list(rdp, &keyList);
 
-	keyCount = rdp_load_persistent_key_list(rdp, &keyList);
-
-	WLog_DBG(TAG, "Persistent Key List: TotalKeyCount: %" PRIu32 " MaxKeyFrag: %" PRIu32, keyCount,
+	WLog_DBG(TAG, "Persistent Key List: TotalKeyCount: %" PRIu16 " MaxKeyFrag: %" PRIu16, keyCount,
 	         keyMaxFrag);
 
 	// MS-RDPBCGR recommends sending no more than 169 entries at once.
@@ -350,11 +352,20 @@ BOOL rdp_send_client_persistent_key_list_pdu(rdpRdp* rdp)
 	if (keyCount > keyMaxFrag)
 		keyCount = keyMaxFrag;
 
-	info.totalEntriesCache0 = settings->BitmapCacheV2CellInfo[0].numEntries;
-	info.totalEntriesCache1 = settings->BitmapCacheV2CellInfo[1].numEntries;
-	info.totalEntriesCache2 = settings->BitmapCacheV2CellInfo[2].numEntries;
-	info.totalEntriesCache3 = settings->BitmapCacheV2CellInfo[3].numEntries;
-	info.totalEntriesCache4 = settings->BitmapCacheV2CellInfo[4].numEntries;
+	WINPR_ASSERT(settings->BitmapCacheV2CellInfo[0].numEntries <= UINT16_MAX);
+	info.totalEntriesCache0 = (UINT16)settings->BitmapCacheV2CellInfo[0].numEntries;
+
+	WINPR_ASSERT(settings->BitmapCacheV2CellInfo[1].numEntries <= UINT16_MAX);
+	info.totalEntriesCache1 = (UINT16)settings->BitmapCacheV2CellInfo[1].numEntries;
+
+	WINPR_ASSERT(settings->BitmapCacheV2CellInfo[2].numEntries <= UINT16_MAX);
+	info.totalEntriesCache2 = (UINT16)settings->BitmapCacheV2CellInfo[2].numEntries;
+
+	WINPR_ASSERT(settings->BitmapCacheV2CellInfo[3].numEntries <= UINT16_MAX);
+	info.totalEntriesCache3 = (UINT16)settings->BitmapCacheV2CellInfo[3].numEntries;
+
+	WINPR_ASSERT(settings->BitmapCacheV2CellInfo[4].numEntries <= UINT16_MAX);
+	info.totalEntriesCache4 = (UINT16)settings->BitmapCacheV2CellInfo[4].numEntries;
 
 	info.numEntriesCache0 = MIN(keyCount, info.totalEntriesCache0);
 	keyCount -= info.numEntriesCache0;
@@ -365,7 +376,6 @@ BOOL rdp_send_client_persistent_key_list_pdu(rdpRdp* rdp)
 	info.numEntriesCache3 = MIN(keyCount, info.totalEntriesCache3);
 	keyCount -= info.numEntriesCache3;
 	info.numEntriesCache4 = MIN(keyCount, info.totalEntriesCache4);
-	keyCount -= info.numEntriesCache4;
 
 	info.totalEntriesCache0 = info.numEntriesCache0;
 	info.totalEntriesCache1 = info.numEntriesCache1;
@@ -396,11 +406,15 @@ BOOL rdp_send_client_persistent_key_list_pdu(rdpRdp* rdp)
 	wStream* s = rdp_data_pdu_init(rdp);
 
 	if (!s)
+	{
+		free(keyList);
 		return FALSE;
+	}
 
 	if (!rdp_write_client_persistent_key_list_pdu(s, &info))
 	{
 		Stream_Free(s, TRUE);
+		free(keyList);
 		return FALSE;
 	}
 
@@ -422,10 +436,10 @@ BOOL rdp_recv_client_font_list_pdu(wStream* s)
 
 BOOL rdp_recv_client_persistent_key_list_pdu(wStream* s)
 {
-	BYTE flags;
+	BYTE flags = 0;
 	size_t count = 0;
 	size_t total = 0;
-	UINT16 cache, x;
+	UINT16 cache = 0;
 
 	WINPR_ASSERT(s);
 
@@ -437,14 +451,14 @@ BOOL rdp_recv_client_persistent_key_list_pdu(wStream* s)
 		return FALSE;
 	}
 	/* Read numEntriesCacheX for variable length data in PDU */
-	for (x = 0; x < 5; x++)
+	for (size_t x = 0; x < 5; x++)
 	{
 		Stream_Read_UINT16(s, cache);
 		count += cache;
 	}
 
 	/* Skip totalEntriesCacheX */
-	for (x = 0; x < 5; x++)
+	for (size_t x = 0; x < 5; x++)
 	{
 		UINT16 tmp = 0;
 		Stream_Read_UINT16(s, tmp);
@@ -515,7 +529,10 @@ BOOL rdp_send_client_font_list_pdu(rdpRdp* rdp, UINT16 flags)
 
 BOOL rdp_recv_font_map_pdu(rdpRdp* rdp, wStream* s)
 {
-	UINT16 numberEntries, totalNumEntries, mapFlags, entrySize;
+	UINT16 numberEntries = 0;
+	UINT16 totalNumEntries = 0;
+	UINT16 mapFlags = 0;
+	UINT16 entrySize = 0;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(rdp->settings);
@@ -583,7 +600,7 @@ BOOL rdp_send_server_font_map_pdu(rdpRdp* rdp)
 
 BOOL rdp_recv_deactivate_all(rdpRdp* rdp, wStream* s)
 {
-	UINT16 lengthSourceDescriptor;
+	UINT16 lengthSourceDescriptor = 0;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(s);
@@ -608,7 +625,7 @@ BOOL rdp_recv_deactivate_all(rdpRdp* rdp, wStream* s)
 	{
 		do
 		{
-			UINT32 ShareId;
+			UINT32 ShareId = 0;
 			if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 				break;
 
@@ -734,8 +751,8 @@ BOOL rdp_server_accept_client_control_pdu(rdpRdp* rdp, wStream* s)
 
 BOOL rdp_server_accept_client_font_list_pdu(rdpRdp* rdp, wStream* s)
 {
-	rdpSettings* settings;
-	freerdp_peer* peer;
+	rdpSettings* settings = NULL;
+	freerdp_peer* peer = NULL;
 
 	WINPR_ASSERT(rdp);
 	WINPR_ASSERT(s);
@@ -778,7 +795,7 @@ BOOL rdp_server_accept_client_persistent_key_list_pdu(rdpRdp* rdp, wStream* s)
 
 const char* rdp_ctrlaction_string(UINT16 action, char* buffer, size_t size)
 {
-	const char* actstr;
+	const char* actstr = NULL;
 	switch (action)
 	{
 		case CTRLACTION_COOPERATE:
@@ -798,6 +815,6 @@ const char* rdp_ctrlaction_string(UINT16 action, char* buffer, size_t size)
 			break;
 	}
 
-	_snprintf(buffer, size, "%s [0x%04" PRIx16 "]", actstr, action);
+	(void)_snprintf(buffer, size, "%s [0x%04" PRIx16 "]", actstr, action);
 	return buffer;
 }

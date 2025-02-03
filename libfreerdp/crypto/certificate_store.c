@@ -38,7 +38,6 @@
 #include <freerdp/crypto/crypto.h>
 #include <freerdp/crypto/certificate_store.h>
 #include <freerdp/log.h>
-#define TAG FREERDP_TAG("crypto")
 
 struct rdp_certificate_store
 {
@@ -116,12 +115,12 @@ BOOL freerdp_certificate_store_save_data(rdpCertificateStore* store, const rdpCe
 	if (!fp)
 		goto fail;
 
-	fprintf(fp, "%s", freerdp_certificate_data_get_pem(data));
+	(void)fprintf(fp, "%s", freerdp_certificate_data_get_pem_ex(data, FALSE));
 
 	rc = TRUE;
 fail:
 	if (fp)
-		fclose(fp);
+		(void)fclose(fp);
 	free(path);
 	return rc;
 }

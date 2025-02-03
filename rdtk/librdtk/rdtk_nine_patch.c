@@ -32,8 +32,8 @@
 #endif
 
 static int rdtk_image_copy_alpha_blend(uint8_t* pDstData, int nDstStep, int nXDst, int nYDst,
-                                       int nWidth, int nHeight, uint8_t* pSrcData, int nSrcStep,
-                                       int nXSrc, int nYSrc)
+                                       int nWidth, int nHeight, const uint8_t* pSrcData,
+                                       int nSrcStep, int nXSrc, int nYSrc)
 {
 	WINPR_ASSERT(pDstData);
 	WINPR_ASSERT(pSrcData);
@@ -78,17 +78,6 @@ static int rdtk_image_copy_alpha_blend(uint8_t* pDstData, int nDstStep, int nXDs
 int rdtk_nine_patch_draw(rdtkSurface* surface, int nXDst, int nYDst, int nWidth, int nHeight,
                          rdtkNinePatch* ninePatch)
 {
-	int x, y;
-	int width;
-	int height;
-	int nXSrc;
-	int nYSrc;
-	int nSrcStep;
-	int nDstStep;
-	uint8_t* pSrcData;
-	uint8_t* pDstData;
-	int scaleWidth;
-
 	WINPR_ASSERT(surface);
 	WINPR_ASSERT(ninePatch);
 
@@ -100,19 +89,20 @@ int rdtk_nine_patch_draw(rdtkSurface* surface, int nXDst, int nYDst, int nWidth,
 
 	WINPR_UNUSED(nHeight);
 
-	scaleWidth = nWidth - (ninePatch->width - ninePatch->scaleWidth);
-	nSrcStep = ninePatch->scanline;
-	pSrcData = ninePatch->data;
-	pDstData = surface->data;
-	nDstStep = surface->scanline;
+	int scaleWidth = nWidth - (ninePatch->width - ninePatch->scaleWidth);
+	int nSrcStep = ninePatch->scanline;
+	const uint8_t* pSrcData = ninePatch->data;
+	uint8_t* pDstData = surface->data;
+	WINPR_ASSERT(surface->scanline <= INT_MAX);
+	int nDstStep = (int)surface->scanline;
 	/* top */
-	x = 0;
-	y = 0;
+	int x = 0;
+	int y = 0;
 	/* top left */
-	nXSrc = 0;
-	nYSrc = 0;
-	width = ninePatch->scaleLeft;
-	height = ninePatch->scaleTop;
+	int nXSrc = 0;
+	int nYSrc = 0;
+	int width = ninePatch->scaleLeft;
+	int height = ninePatch->scaleTop;
 	rdtk_image_copy_alpha_blend(pDstData, nDstStep, nXDst + x, nYDst + y, width, height, pSrcData,
 	                            nSrcStep, nXSrc, nYSrc);
 	x += width;
@@ -268,7 +258,8 @@ static BOOL rdtk_nine_patch_get_scale_ht(rdtkNinePatch* ninePatch, wImage* image
 
 	for (uint32_t y = 1; y < image->height - 1; y++)
 	{
-		const uint32_t* pixel = (const uint32_t*)&image->data[image->scanline * y]; /* (1, 0) */
+		const uint32_t* pixel =
+		    (const uint32_t*)&image->data[1ULL * image->scanline * y]; /* (1, 0) */
 		if (beg < 0)
 		{
 			if (*pixel)
@@ -311,8 +302,9 @@ static BOOL rdtk_nine_patch_get_fill_lr(rdtkNinePatch* ninePatch, wImage* image)
 
 	for (uint32_t x = 1; x < image->width - 1; x++)
 	{
-		const uint32_t* pixel = (uint32_t*)&image->data[((image->height - 1) * image->scanline) +
-		                                                x * sizeof(uint32_t)]; /* (1, height - 1) */
+		const uint32_t* pixel =
+		    (uint32_t*)&image->data[((1ULL * image->height - 1ULL) * image->scanline) +
+		                            x * sizeof(uint32_t)]; /* (1, height - 1) */
 		if (beg < 0)
 		{
 			if (*pixel)
@@ -447,16 +439,16 @@ void rdtk_nine_patch_free(rdtkNinePatch* ninePatch)
 
 int rdtk_nine_patch_engine_init(rdtkEngine* engine)
 {
-	int status;
+	int status = 0;
 	wImage* image = NULL;
-	rdtkNinePatch* ninePatch;
+	rdtkNinePatch* ninePatch = NULL;
 
 	WINPR_ASSERT(engine);
 
 	if (!engine->button9patch)
 	{
-		SSIZE_T size;
-		const uint8_t* data;
+		SSIZE_T size = 0;
+		const uint8_t* data = NULL;
 		status = -1;
 		size = rdtk_get_embedded_resource_file("btn_default_normal.9." FILE_EXT, &data);
 
@@ -483,8 +475,8 @@ int rdtk_nine_patch_engine_init(rdtkEngine* engine)
 
 	if (!engine->textField9patch)
 	{
-		SSIZE_T size;
-		const uint8_t* data;
+		SSIZE_T size = 0;
+		const uint8_t* data = NULL;
 		status = -1;
 		size = rdtk_get_embedded_resource_file("textfield_default.9." FILE_EXT, &data);
 		image = NULL;

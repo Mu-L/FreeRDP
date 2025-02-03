@@ -229,7 +229,7 @@ public class KeyboardMapper
 
 	public void init(Context context)
 	{
-		if (initialized == true)
+		if (initialized)
 			return;
 
 		keymapAndroid = new int[256];
@@ -433,7 +433,7 @@ public class KeyboardMapper
 				boolean modifierActive = isModifierPressed();
 				// if a modifier is pressed we will send a VK event (if possible) so that key
 				// combinations will be recognized correctly. Otherwise we will send the unicode
-				// key. At the end we will reset all modifiers and notifiy our listener.
+				// key. At the end we will reset all modifiers and notify our listener.
 				int vkcode = getVirtualKeyCode(event.getKeyCode());
 				if ((vkcode & KEY_FLAG_UNICODE) != 0)
 					listener.processUnicodeKey(vkcode & (~KEY_FLAG_UNICODE));
@@ -714,12 +714,12 @@ public class KeyboardMapper
 
 	// interface that gets called for input handling
 	public interface KeyProcessingListener {
-		abstract void processVirtualKey(int virtualKeyCode, boolean down);
+		void processVirtualKey(int virtualKeyCode, boolean down);
 
-		abstract void processUnicodeKey(int unicodeKey);
+		void processUnicodeKey(int unicodeKey);
 
-		abstract void switchKeyboard(int keyboardType);
+		void switchKeyboard(int keyboardType);
 
-		abstract void modifiersChanged();
+		void modifiersChanged();
 	}
 }

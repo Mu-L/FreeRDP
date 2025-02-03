@@ -29,11 +29,11 @@ static DWORD WINAPI named_pipe_client_thread(LPVOID arg)
 	BYTE* lpReadBuffer = NULL;
 	BYTE* lpWriteBuffer = NULL;
 	BOOL fSuccess = FALSE;
-	DWORD nNumberOfBytesToRead;
-	DWORD nNumberOfBytesToWrite;
-	DWORD lpNumberOfBytesRead;
-	DWORD lpNumberOfBytesWritten;
-	WaitForSingleObject(ReadyEvent, INFINITE);
+	DWORD nNumberOfBytesToRead = 0;
+	DWORD nNumberOfBytesToWrite = 0;
+	DWORD lpNumberOfBytesRead = 0;
+	DWORD lpNumberOfBytesWritten = 0;
+	(void)WaitForSingleObject(ReadyEvent, INFINITE);
 	hNamedPipe =
 	    CreateFile(lpszPipeNameMt, GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING, 0, NULL);
 
@@ -84,7 +84,7 @@ static DWORD WINAPI named_pipe_client_thread(LPVOID arg)
 out:
 	free(lpReadBuffer);
 	free(lpWriteBuffer);
-	CloseHandle(hNamedPipe);
+	(void)CloseHandle(hNamedPipe);
 
 	if (!fSuccess)
 		testFailed = TRUE;
@@ -100,10 +100,10 @@ static DWORD WINAPI named_pipe_server_thread(LPVOID arg)
 	BYTE* lpWriteBuffer = NULL;
 	BOOL fSuccess = FALSE;
 	BOOL fConnected = FALSE;
-	DWORD nNumberOfBytesToRead;
-	DWORD nNumberOfBytesToWrite;
-	DWORD lpNumberOfBytesRead;
-	DWORD lpNumberOfBytesWritten;
+	DWORD nNumberOfBytesToRead = 0;
+	DWORD nNumberOfBytesToWrite = 0;
+	DWORD lpNumberOfBytesRead = 0;
+	DWORD lpNumberOfBytesWritten = 0;
 	hNamedPipe = CreateNamedPipe(
 	    lpszPipeNameMt, PIPE_ACCESS_DUPLEX, PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
 	    PIPE_UNLIMITED_INSTANCES, PIPE_BUFFER_SIZE, PIPE_BUFFER_SIZE, 0, NULL);
@@ -120,7 +120,7 @@ static DWORD WINAPI named_pipe_server_thread(LPVOID arg)
 		goto out;
 	}
 
-	SetEvent(ReadyEvent);
+	(void)SetEvent(ReadyEvent);
 
 	/**
 	 * Note:
@@ -179,7 +179,7 @@ static DWORD WINAPI named_pipe_server_thread(LPVOID arg)
 out:
 	free(lpReadBuffer);
 	free(lpWriteBuffer);
-	CloseHandle(hNamedPipe);
+	(void)CloseHandle(hNamedPipe);
 
 	if (!fSuccess)
 		testFailed = TRUE;
@@ -193,15 +193,14 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 {
 	HANDLE servers[TESTNUMPIPESST] = { 0 };
 	HANDLE clients[TESTNUMPIPESST] = { 0 };
-	DWORD dwRead;
-	DWORD dwWritten;
-	int i;
-	int numPipes;
+	DWORD dwRead = 0;
+	DWORD dwWritten = 0;
+	int numPipes = 0;
 	BOOL bSuccess = FALSE;
 	numPipes = TESTNUMPIPESST;
-	WaitForSingleObject(ReadyEvent, INFINITE);
+	(void)WaitForSingleObject(ReadyEvent, INFINITE);
 
-	for (i = 0; i < numPipes; i++)
+	for (int i = 0; i < numPipes; i++)
 	{
 		if (!(servers[i] = CreateNamedPipe(lpszPipeNameSt, PIPE_ACCESS_DUPLEX,
 		                                   PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
@@ -215,11 +214,11 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 
 #ifndef _WIN32
 
-	for (i = 0; i < numPipes; i++)
+	for (int i = 0; i < numPipes; i++)
 	{
 		WINPR_NAMED_PIPE* p = (WINPR_NAMED_PIPE*)servers[i];
 
-		if (strcmp(lpszPipeNameSt, p->name))
+		if (strcmp(lpszPipeNameSt, p->name) != 0)
 		{
 			printf("%s: Pipe name mismatch for pipe #%d ([%s] instead of [%s])\n", __func__, i,
 			       p->name, lpszPipeNameSt);
@@ -249,9 +248,9 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 
 #endif
 
-	for (i = 0; i < numPipes; i++)
+	for (int i = 0; i < numPipes; i++)
 	{
-		BOOL fConnected;
+		BOOL fConnected = 0;
 		if ((clients[i] = CreateFile(lpszPipeNameSt, GENERIC_READ | GENERIC_WRITE, 0, NULL,
 		                             OPEN_EXISTING, 0, NULL)) == INVALID_HANDLE_VALUE)
 		{
@@ -279,7 +278,7 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 
 #ifndef _WIN32
 
-	for (i = 0; i < numPipes; i++)
+	for (int i = 0; i < numPipes; i++)
 	{
 		WINPR_NAMED_PIPE* p = servers[i];
 
@@ -297,13 +296,13 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 		}
 	}
 
-	for (i = 0; i < numPipes; i++)
+	for (int i = 0; i < numPipes; i++)
 	{
 		{
 			char sndbuf[PIPE_BUFFER_SIZE] = { 0 };
 			char rcvbuf[PIPE_BUFFER_SIZE] = { 0 };
 			/* Test writing from clients to servers */
-			sprintf_s(sndbuf, sizeof(sndbuf), "CLIENT->SERVER ON PIPE #%05d", i);
+			(void)sprintf_s(sndbuf, sizeof(sndbuf), "CLIENT->SERVER ON PIPE #%05d", i);
 
 			if (!WriteFile(clients[i], sndbuf, sizeof(sndbuf), &dwWritten, NULL) ||
 			    dwWritten != sizeof(sndbuf))
@@ -318,7 +317,7 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 				goto out;
 			}
 
-			if (memcmp(sndbuf, rcvbuf, sizeof(sndbuf)))
+			if (memcmp(sndbuf, rcvbuf, sizeof(sndbuf)) != 0)
 			{
 				printf("%s: Error data read on server end of pipe #%d is corrupted\n", __func__, i);
 				goto out;
@@ -330,7 +329,7 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 			char rcvbuf[PIPE_BUFFER_SIZE] = { 0 };
 			/* Test writing from servers to clients */
 
-			sprintf_s(sndbuf, sizeof(sndbuf), "SERVER->CLIENT ON PIPE #%05d", i);
+			(void)sprintf_s(sndbuf, sizeof(sndbuf), "SERVER->CLIENT ON PIPE #%05d", i);
 
 			if (!WriteFile(servers[i], sndbuf, sizeof(sndbuf), &dwWritten, NULL) ||
 			    dwWritten != sizeof(sndbuf))
@@ -345,7 +344,7 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 				goto out;
 			}
 
-			if (memcmp(sndbuf, rcvbuf, sizeof(sndbuf)))
+			if (memcmp(sndbuf, rcvbuf, sizeof(sndbuf)) != 0)
 			{
 				printf("%s: Error data read on client end of pipe #%d is corrupted\n", __func__, i);
 				goto out;
@@ -358,7 +357,7 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 	 * After DisconnectNamedPipe on server end
 	 * ReadFile/WriteFile must fail on client end
 	 */
-	i = numPipes - 1;
+	int i = numPipes - 1;
 	DisconnectNamedPipe(servers[i]);
 	{
 		char sndbuf[PIPE_BUFFER_SIZE] = { 0 };
@@ -380,15 +379,15 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 			goto out;
 		}
 	}
-	CloseHandle(servers[i]);
-	CloseHandle(clients[i]);
+	(void)CloseHandle(servers[i]);
+	(void)CloseHandle(clients[i]);
 	numPipes--;
 	/**
 	 * After CloseHandle (without calling DisconnectNamedPipe first) on server end
 	 * ReadFile/WriteFile must fail on client end
 	 */
 	i = numPipes - 1;
-	CloseHandle(servers[i]);
+	(void)CloseHandle(servers[i]);
 
 	{
 		char sndbuf[PIPE_BUFFER_SIZE] = { 0 };
@@ -410,14 +409,14 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 			goto out;
 		}
 	}
-	CloseHandle(clients[i]);
+	(void)CloseHandle(clients[i]);
 	numPipes--;
 	/**
 	 * After CloseHandle on client end
 	 * ReadFile/WriteFile must fail on server end
 	 */
 	i = numPipes - 1;
-	CloseHandle(clients[i]);
+	(void)CloseHandle(clients[i]);
 
 	{
 		char sndbuf[PIPE_BUFFER_SIZE] = { 0 };
@@ -441,15 +440,15 @@ static DWORD WINAPI named_pipe_single_thread(LPVOID arg)
 	}
 
 	DisconnectNamedPipe(servers[i]);
-	CloseHandle(servers[i]);
+	(void)CloseHandle(servers[i]);
 	numPipes--;
 
 	/* Close all remaining pipes */
-	for (i = 0; i < numPipes; i++)
+	for (int i = 0; i < numPipes; i++)
 	{
 		DisconnectNamedPipe(servers[i]);
-		CloseHandle(servers[i]);
-		CloseHandle(clients[i]);
+		(void)CloseHandle(servers[i]);
+		(void)CloseHandle(clients[i]);
 	}
 
 	bSuccess = TRUE;
@@ -463,10 +462,10 @@ out:
 
 int TestPipeCreateNamedPipe(int argc, char* argv[])
 {
-	HANDLE SingleThread;
-	HANDLE ClientThread;
-	HANDLE ServerThread;
-	HANDLE hPipe;
+	HANDLE SingleThread = NULL;
+	HANDLE ClientThread = NULL;
+	HANDLE ServerThread = NULL;
+	HANDLE hPipe = NULL;
 	WINPR_UNUSED(argc);
 	WINPR_UNUSED(argv);
 	/* Verify that CreateNamedPipe returns INVALID_HANDLE_VALUE on failure */
@@ -479,7 +478,7 @@ int TestPipeCreateNamedPipe(int argc, char* argv[])
 	}
 
 #ifndef _WIN32
-	signal(SIGPIPE, SIG_IGN);
+	(void)signal(SIGPIPE, SIG_IGN);
 #endif
 	if (!(ReadyEvent = CreateEvent(NULL, TRUE, FALSE, NULL)))
 	{
@@ -501,11 +500,11 @@ int TestPipeCreateNamedPipe(int argc, char* argv[])
 		printf("CreateThread (ServerThread) failure: (%" PRIu32 ")\n", GetLastError());
 		return -1;
 	}
-	WaitForSingleObject(SingleThread, INFINITE);
-	WaitForSingleObject(ClientThread, INFINITE);
-	WaitForSingleObject(ServerThread, INFINITE);
-	CloseHandle(SingleThread);
-	CloseHandle(ClientThread);
-	CloseHandle(ServerThread);
+	(void)WaitForSingleObject(SingleThread, INFINITE);
+	(void)WaitForSingleObject(ClientThread, INFINITE);
+	(void)WaitForSingleObject(ServerThread, INFINITE);
+	(void)CloseHandle(SingleThread);
+	(void)CloseHandle(ClientThread);
+	(void)CloseHandle(ServerThread);
 	return testFailed;
 }

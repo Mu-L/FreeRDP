@@ -317,7 +317,8 @@ BOOL security_mac_data(const BYTE* mac_salt_key, size_t mac_salt_key_length, con
 	WINPR_ASSERT(output_length == WINPR_MD5_DIGEST_LENGTH);
 
 	/* MacData = MD5(MacSaltKey + pad2 + SHA1(MacSaltKey + pad1 + length + data)) */
-	security_UINT32_le(length_le, sizeof(length_le), length); /* length must be little-endian */
+	security_UINT32_le(length_le, sizeof(length_le),
+	                   (UINT32)length); /* length must be little-endian */
 
 	/* SHA1_Digest = SHA1(MacSaltKey + pad1 + length + data) */
 	if (!(sha1 = winpr_Digest_New()))
@@ -572,7 +573,7 @@ static void fips_expand_key_bits(const BYTE* in, size_t in_len, BYTE* out, size_
 	WINPR_ASSERT(in_len >= sizeof(buf));
 
 	WINPR_ASSERT(out);
-	WINPR_ASSERT(out_len > 24);
+	WINPR_ASSERT(out_len >= 24);
 
 	/* reverse every byte in the key */
 	for (size_t i = 0; i < sizeof(buf); i++)
@@ -592,6 +593,7 @@ static void fips_expand_key_bits(const BYTE* in, size_t in_len, BYTE* out, size_
 		}
 		else
 		{
+			WINPR_ASSERT(p + 1 < sizeof(buf));
 			/* c is accumulator */
 			BYTE c = (BYTE)(buf[p] << r) & 0xFF;
 			c |= buf[p + 1] >> (8 - r);

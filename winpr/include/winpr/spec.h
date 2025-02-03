@@ -22,6 +22,10 @@
 
 #include <winpr/platform.h>
 
+WINPR_PRAGMA_DIAG_PUSH
+WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
+WINPR_PRAGMA_DIAG_IGNORED_RESERVED_IDENTIFIER
+
 #ifdef _WIN32
 
 #include <specstrings.h>
@@ -31,9 +35,7 @@
 
 #else
 
-WINPR_PRAGMA_DIAG_PUSH
-WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
-
+#if defined(NONAMELESSUNION)
 #define DUMMYUNIONNAME u
 #define DUMMYUNIONNAME1 u1
 #define DUMMYUNIONNAME2 u2
@@ -50,6 +52,24 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #define DUMMYSTRUCTNAME3 s3
 #define DUMMYSTRUCTNAME4 s4
 #define DUMMYSTRUCTNAME5 s5
+#else
+#define DUMMYUNIONNAME
+#define DUMMYUNIONNAME1
+#define DUMMYUNIONNAME2
+#define DUMMYUNIONNAME3
+#define DUMMYUNIONNAME4
+#define DUMMYUNIONNAME5
+#define DUMMYUNIONNAME6
+#define DUMMYUNIONNAME7
+#define DUMMYUNIONNAME8
+
+#define DUMMYSTRUCTNAME
+#define DUMMYSTRUCTNAME1
+#define DUMMYSTRUCTNAME2
+#define DUMMYSTRUCTNAME3
+#define DUMMYSTRUCTNAME4
+#define DUMMYSTRUCTNAME5
+#endif
 
 #if (defined(_M_AMD64) || defined(_M_ARM)) && !defined(_WIN32)
 #define _UNALIGNED __unaligned
@@ -323,7 +343,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #define _In_count_(size)
 #define _In_count_c_(size)
 #define _In_count_x_(size)
-#define _In_defensive_(annotes)
+#define _In_defensive_(annotates)
 #define _In_opt_
 #define _In_opt_bytecount_(size)
 #define _In_opt_bytecount_c_(size)
@@ -368,7 +388,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #define _Inout_count_(size)
 #define _Inout_count_c_(size)
 #define _Inout_count_x_(size)
-#define _Inout_defensive_(annotes)
+#define _Inout_defensive_(annotates)
 #define _Inout_opt_
 #define _Inout_opt_bytecap_(size)
 #define _Inout_opt_bytecap_c_(size)
@@ -449,7 +469,7 @@ WINPR_PRAGMA_DIAG_IGNORED_RESERVED_ID_MACRO
 #define _Out_cap_x_(size)
 #define _Out_capcount_(capcount)
 #define _Out_capcount_x_(capcount)
-#define _Out_defensive_(annotes)
+#define _Out_defensive_(annotates)
 #define _Out_opt_
 #define _Out_opt_bytecap_(size)
 #define _Out_opt_bytecap_c_(size)
@@ -957,10 +977,6 @@ extern "C++"
 #define CONTAINING_RECORD(address, type, field) \
 	((type*)((PCHAR)(address) - (ULONG_PTR)(&((type*)0)->field)))
 
-#if defined(__clang__)
-WINPR_PRAGMA_DIAG_POP
-#endif
-
 #endif
 
 #if defined(_WIN32) || defined(__CYGWIN__)
@@ -982,5 +998,7 @@ WINPR_PRAGMA_DIAG_POP
 #define DECLSPEC_IMPORT
 #endif
 #endif
+
+WINPR_PRAGMA_DIAG_POP
 
 #endif /* WINPR_SPEC_H */

@@ -42,6 +42,10 @@ extern "C"
 {
 #endif
 
+/** The command line name of the channel
+ *
+ *  \since version 3.0.0
+ */
 #define RDPDR_CHANNEL_NAME "rdpdr"
 #define RDPDR_SVC_CHANNEL_NAME "rdpdr"
 
@@ -354,7 +358,7 @@ struct S_IRP
 	UINT32 MinorFunction;
 	wStream* input;
 
-	UINT32 IoStatus;
+	NTSTATUS IoStatus;
 	wStream* output;
 
 	pcIRPResponse Complete;
@@ -383,7 +387,7 @@ typedef struct
 } DEVICE_SERVICE_ENTRY_POINTS;
 typedef DEVICE_SERVICE_ENTRY_POINTS* PDEVICE_SERVICE_ENTRY_POINTS;
 
-typedef UINT (*PDEVICE_SERVICE_ENTRY)(PDEVICE_SERVICE_ENTRY_POINTS);
+typedef UINT(VCAPITYPE* PDEVICE_SERVICE_ENTRY)(PDEVICE_SERVICE_ENTRY_POINTS);
 
 #ifdef __cplusplus
 }

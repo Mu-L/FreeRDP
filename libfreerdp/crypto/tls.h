@@ -71,7 +71,7 @@ struct rdp_tls
 	SSL_CTX* ctx;
 	BYTE* PublicKey;
 	DWORD PublicKeyLength;
-	rdpSettings* settings;
+	rdpContext* context;
 	SecPkgContext_Bindings* Bindings;
 	rdpCertificateStore* certificate_store;
 	BIO* underlying;
@@ -115,14 +115,14 @@ extern "C"
 
 	FREERDP_LOCAL BOOL freerdp_tls_send_alert(rdpTls* tls);
 
-	FREERDP_LOCAL int freerdp_tls_write_all(rdpTls* tls, const BYTE* data, int length);
+	FREERDP_LOCAL int freerdp_tls_write_all(rdpTls* tls, const BYTE* data, size_t length);
 
 	FREERDP_LOCAL int freerdp_tls_set_alert_code(rdpTls* tls, int level, int description);
 
 	FREERDP_LOCAL void freerdp_tls_free(rdpTls* tls);
 
 	WINPR_ATTR_MALLOC(freerdp_tls_free, 1)
-	FREERDP_LOCAL rdpTls* freerdp_tls_new(rdpSettings* settings);
+	FREERDP_LOCAL rdpTls* freerdp_tls_new(rdpContext* context);
 
 #ifdef __cplusplus
 }

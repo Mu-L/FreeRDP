@@ -28,6 +28,8 @@
 #include <winpr/endian.h>
 #include <winpr/synch.h>
 #include <winpr/assert.h>
+#include <winpr/cast.h>
+#include <winpr/wlog.h>
 
 #ifdef __cplusplus
 extern "C"
@@ -56,11 +58,7 @@ extern "C"
 	WINPR_API BOOL Stream_EnsureCapacity(wStream* s, size_t size);
 	WINPR_API BOOL Stream_EnsureRemainingCapacity(wStream* s, size_t size);
 
-#ifdef __cplusplus
-#define WINPR_STREAM_CAST(t, val) static_cast<t>(val)
-#else
-#define WINPR_STREAM_CAST(t, val) (t)(val)
-#endif
+#define WINPR_STREAM_CAST(t, val) WINPR_CXX_COMPAT_CAST(t, val)
 
 #define Stream_CheckAndLogRequiredCapacityOfSize(tag, s, nmemb, size)                         \
 	Stream_CheckAndLogRequiredCapacityEx(tag, WLOG_WARN, s, nmemb, size, "%s(%s:%" PRIuz ")", \
@@ -131,7 +129,7 @@ extern "C"
 
 	static INLINE void Stream_Rewind(wStream* s, size_t _offset)
 	{
-		size_t cur;
+		size_t cur = 0;
 		WINPR_ASSERT(s);
 		WINPR_ASSERT(s->buffer <= s->pointer);
 		cur = WINPR_STREAM_CAST(size_t, s->pointer - s->buffer);
@@ -147,7 +145,7 @@ extern "C"
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT8));
 
-		const UINT8 v = WINPR_STREAM_CAST(UINT8, *(_s)->pointer);
+		const UINT8 v = winpr_Data_Get_UINT8(_s->pointer);
 		if (seek)
 			Stream_Seek(_s, sizeof(UINT8));
 		return v;
@@ -155,10 +153,7 @@ extern "C"
 
 	static INLINE INT8 stream_read_i8(wStream* _s, BOOL seek)
 	{
-		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(INT8));
-
-		const INT8 v = WINPR_STREAM_CAST(INT8, *(_s)->pointer);
+		const INT8 v = winpr_Data_Get_INT8(_s->pointer);
 		if (seek)
 			Stream_Seek(_s, sizeof(INT8));
 		return v;
@@ -166,186 +161,454 @@ extern "C"
 
 	static INLINE UINT16 stream_read_u16_le(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(UINT16);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT16));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const UINT16 v = WINPR_STREAM_CAST(
-		    UINT16, (*(_s)->pointer) + ((WINPR_STREAM_CAST(UINT16, *((_s)->pointer + 1))) << 8));
+		const UINT16 v = winpr_Data_Get_UINT16(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT16));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE UINT16 stream_read_u16_be(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(UINT16);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT16));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const UINT16 v = ((WINPR_STREAM_CAST(UINT16, *(_s)->pointer) << 8) +
-		                  (WINPR_STREAM_CAST(UINT16, *((_s)->pointer + 1))));
+		const UINT16 v = winpr_Data_Get_UINT16_BE(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT16));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
-	static INLINE UINT16 stream_read_i16_le(wStream* _s, BOOL seek)
+	static INLINE INT16 stream_read_i16_le(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(INT16);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(INT16));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const INT16 v = WINPR_STREAM_CAST(
-		    INT16, (*(_s)->pointer) + ((WINPR_STREAM_CAST(INT16, *((_s)->pointer + 1))) << 8));
+		const INT16 v = winpr_Data_Get_INT16(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(INT16));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
-	static INLINE UINT16 stream_read_i16_be(wStream* _s, BOOL seek)
+	static INLINE INT16 stream_read_i16_be(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(INT16);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(INT16));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const INT16 v = ((WINPR_STREAM_CAST(INT16, *(_s)->pointer) << 8) +
-		                 (WINPR_STREAM_CAST(INT16, *((_s)->pointer + 1))));
+		const INT16 v = winpr_Data_Get_INT16_BE(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(INT16));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE UINT32 stream_read_u32_le(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(UINT32);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT32));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const UINT32 v = (WINPR_STREAM_CAST(UINT32, *(_s)->pointer) << 0) +
-		                 ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 1))) << 8) +
-		                 ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 2))) << 16) +
-		                 (((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 3))) << 24));
+		const UINT32 v = winpr_Data_Get_UINT32(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT32));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE UINT32 stream_read_u32_be(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(UINT32);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT32));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const UINT32 v = (WINPR_STREAM_CAST(UINT32, *(_s)->pointer) << 24) +
-		                 ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 1))) << 16) +
-		                 ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 2))) << 8) +
-		                 (((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 3))) << 0));
+		const UINT32 v = winpr_Data_Get_UINT32_BE(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT32));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE INT32 stream_read_i32_le(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(INT32);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT32));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const INT32 v =
-		    WINPR_STREAM_CAST(INT32, (WINPR_STREAM_CAST(UINT32, *(_s)->pointer) << 0) +
-		                                 ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 1))) << 8) +
-		                                 ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 2))) << 16) +
-		                                 ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 3))) << 24));
+		const INT32 v = winpr_Data_Get_INT32(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT32));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE INT32 stream_read_i32_be(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(INT32);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT32));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const INT32 v = WINPR_STREAM_CAST(
-		    INT32, (WINPR_STREAM_CAST(UINT32, *(_s)->pointer) << 24) +
-		               ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 1))) << 16) +
-		               ((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 2))) << 8) +
-		               (((WINPR_STREAM_CAST(UINT32, *((_s)->pointer + 3))) << 0)));
+		const INT32 v = winpr_Data_Get_INT32_BE(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT32));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE UINT64 stream_read_u64_le(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(UINT64);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT64));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const UINT64 v = (WINPR_STREAM_CAST(UINT64, *(_s)->pointer) << 0) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 1))) << 8) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 2))) << 16) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 3))) << 24) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 4))) << 32) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 5))) << 40) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 6))) << 48) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 7))) << 56);
-
+		const UINT64 v = winpr_Data_Get_UINT64(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT64));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE UINT64 stream_read_u64_be(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(UINT64);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(UINT64));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const UINT64 v = (WINPR_STREAM_CAST(UINT64, *(_s)->pointer) << 56) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 1))) << 48) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 2))) << 40) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 3))) << 32) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 4))) << 24) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 5))) << 16) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 6))) << 8) +
-		                 ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 7))) << 0);
-
+		const UINT64 v = winpr_Data_Get_UINT64_BE(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT64));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE INT64 stream_read_i64_le(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(INT64);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(INT64));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const INT64 v =
-		    WINPR_STREAM_CAST(INT64, ((WINPR_STREAM_CAST(UINT64, *(_s)->pointer) << 0) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 1))) << 8) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 2))) << 16) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 3))) << 24) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 4))) << 32) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 5))) << 40) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 6))) << 48) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 7))) << 56)));
-
+		const INT64 v = winpr_Data_Get_INT64(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT64));
+			Stream_Seek(_s, typesize);
 		return v;
 	}
 
 	static INLINE INT64 stream_read_i64_be(wStream* _s, BOOL seek)
 	{
+		const size_t typesize = sizeof(INT64);
 		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= sizeof(INT64));
+		WINPR_ASSERT(Stream_GetRemainingLength(_s) >= typesize);
 
-		const INT64 v =
-		    WINPR_STREAM_CAST(INT64, ((WINPR_STREAM_CAST(UINT64, *(_s)->pointer) << 56) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 1))) << 48) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 2))) << 40) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 3))) << 32) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 4))) << 24) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 5))) << 16) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 6))) << 8) +
-		                              ((WINPR_STREAM_CAST(UINT64, *((_s)->pointer + 7))) << 0)));
-
+		const INT64 v = winpr_Data_Get_INT64_BE(_s->pointer);
 		if (seek)
-			Stream_Seek(_s, sizeof(UINT64));
+			Stream_Seek(_s, typesize);
 		return v;
+	}
+
+	/**
+	 * @brief Stream_Get_UINT8
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT8 Stream_Get_UINT8(wStream* _s)
+	{
+		return stream_read_u8(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_INT8
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT8 Stream_Get_INT8(wStream* _s)
+	{
+		return stream_read_i8(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_UINT16
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT16 Stream_Get_UINT16(wStream* _s)
+	{
+		return stream_read_u16_le(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_INT16
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT16 Stream_Get_INT16(wStream* _s)
+	{
+		return stream_read_i16_le(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_UINT16 big endian
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT16 Stream_Get_UINT16_BE(wStream* _s)
+	{
+		return stream_read_u16_be(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_INT16 big endian
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT16 Stream_Get_INT16_BE(wStream* _s)
+	{
+		return stream_read_i16_be(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_UINT32
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT32 Stream_Get_UINT32(wStream* _s)
+	{
+		return stream_read_u32_le(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_INT32
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT32 Stream_Get_INT32(wStream* _s)
+	{
+		return stream_read_i32_le(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_UINT32 big endian
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT32 Stream_Get_UINT32_BE(wStream* _s)
+	{
+		return stream_read_u32_be(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_INT32 big endian
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT32 Stream_Get_INT32_BE(wStream* _s)
+	{
+		return stream_read_i32_be(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_UINT64
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT64 Stream_Get_UINT64(wStream* _s)
+	{
+		return stream_read_u64_le(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_INT64
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT64 Stream_Get_INT64(wStream* _s)
+	{
+		return stream_read_i64_le(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_UINT64 big endian
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT64 Stream_Get_UINT64_BE(wStream* _s)
+	{
+		return stream_read_u64_be(_s, TRUE);
+	}
+
+	/**
+	 * @brief Stream_Get_INT64 big endian
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT64 Stream_Get_INT64_BE(wStream* _s)
+	{
+		return stream_read_i64_be(_s, TRUE);
+	}
+
+	/**
+	 * @brief Read a UINT8 from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT8 Stream_Peek_Get_UINT8(wStream* _s)
+	{
+		return stream_read_u8(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a INT8 from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT8 Stream_Peek_Get_INT8(wStream* _s)
+	{
+		return stream_read_i8(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a UINT16 from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT16 Stream_Peek_Get_UINT16(wStream* _s)
+	{
+		return stream_read_u16_le(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a INT16 from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT16 Stream_Peek_Get_INT16(wStream* _s)
+	{
+		return stream_read_i16_le(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a UINT16 big endian from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT16 Stream_Peek_Get_UINT16_BE(wStream* _s)
+	{
+		return stream_read_u16_be(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a INT16 big endian from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT16 Stream_Peek_Get_INT16_BE(wStream* _s)
+	{
+		return stream_read_i16_be(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a UINT32 from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT32 Stream_Peek_Get_UINT32(wStream* _s)
+	{
+		return stream_read_u32_le(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a INT32 from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT32 Stream_Peek_Get_INT32(wStream* _s)
+	{
+		return stream_read_i32_le(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a UINT32 big endian from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT32 Stream_Peek_Get_UINT32_BE(wStream* _s)
+	{
+		return stream_read_u32_be(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a INT32 big endian from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT32 Stream_Peek_Get_INT32_BE(wStream* _s)
+	{
+		return stream_read_i32_be(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a UINT64 from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT64 Stream_Peek_Get_UINT64(wStream* _s)
+	{
+		return stream_read_u64_le(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a INT64 from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT64 Stream_Peek_Get_INT64(wStream* _s)
+	{
+		return stream_read_i64_le(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a UINT64 big endian from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE UINT64 Stream_Peek_Get_UINT64_BE(wStream* _s)
+	{
+		return stream_read_u64_be(_s, FALSE);
+	}
+
+	/**
+	 * @brief Read a INT64 big endian from the stream, do not increment stream position
+	 * @param _s The stream to read from
+	 * @return an integer
+	 * @since version 3.9.0
+	 */
+	static INLINE INT64 Stream_Peek_Get_INT64_BE(wStream* _s)
+	{
+		return stream_read_i64_be(_s, FALSE);
 	}
 
 #define Stream_Read_UINT8(_s, _v)      \
@@ -533,95 +796,360 @@ extern "C"
 		memcpy(_b, (_s->pointer), (_n));
 	}
 
-	static INLINE void Stream_Write_UINT8(wStream* _s, UINT8 _v)
+#define Stream_Write_INT8(s, v)                \
+	do                                         \
+	{                                          \
+		WINPR_ASSERT((v) <= INT8_MAX);         \
+		WINPR_ASSERT((v) >= INT8_MIN);         \
+		Stream_Write_INT8_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b INT8 to a \b wStream. The stream must be large enough to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_INT8 instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_INT8_unchecked(wStream* _s, INT8 _v)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(_s->pointer);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 1);
-		*_s->pointer++ = (_v);
+
+		winpr_Data_Write_INT8(_s->pointer, _v);
+		_s->pointer += 1;
 	}
 
-	static INLINE void Stream_Write_INT16(wStream* _s, INT16 _v)
+#define Stream_Write_UINT8(s, v)                \
+	do                                          \
+	{                                           \
+		WINPR_ASSERT((v) <= UINT8_MAX);         \
+		WINPR_ASSERT((v) >= 0);                 \
+		Stream_Write_UINT8_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b UINT8 to a \b wStream. The stream must be large enough to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_UINT8 instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_UINT8_unchecked(wStream* _s, UINT8 _v)
+	{
+		WINPR_ASSERT(_s);
+		WINPR_ASSERT(_s->pointer);
+		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 1);
+
+		winpr_Data_Write_UINT8(_s->pointer, _v);
+		_s->pointer += 1;
+	}
+
+#define Stream_Write_INT16(s, v)                \
+	do                                          \
+	{                                           \
+		WINPR_ASSERT((v) >= INT16_MIN);         \
+		WINPR_ASSERT((v) <= INT16_MAX);         \
+		Stream_Write_INT16_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b INT16 as \b little endian to a \b wStream. The stream must be large
+	 * enough to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_INT16 instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_INT16_unchecked(wStream* _s, INT16 _v)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(_s->pointer);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 2);
-		*_s->pointer++ = (_v)&0xFF;
-		*_s->pointer++ = ((_v) >> 8) & 0xFF;
+
+		winpr_Data_Write_INT16(_s->pointer, _v);
+		_s->pointer += 2;
 	}
 
-	static INLINE void Stream_Write_UINT16(wStream* _s, UINT16 _v)
+#define Stream_Write_UINT16(s, v)                \
+	do                                           \
+	{                                            \
+		WINPR_ASSERT((v) <= UINT16_MAX);         \
+		WINPR_ASSERT((v) >= 0);                  \
+		Stream_Write_UINT16_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b UINT16 as \b little endian to a \b wStream. The stream must be large
+	 * enough to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_UINT16 instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_UINT16_unchecked(wStream* _s, UINT16 _v)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(_s->pointer);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 2);
-		*_s->pointer++ = (_v)&0xFF;
-		*_s->pointer++ = ((_v) >> 8) & 0xFF;
+
+		winpr_Data_Write_UINT16(_s->pointer, _v);
+		_s->pointer += 2;
 	}
 
-	static INLINE void Stream_Write_UINT16_BE(wStream* _s, UINT16 _v)
+#define Stream_Write_UINT16_BE(s, v)                \
+	do                                              \
+	{                                               \
+		WINPR_ASSERT((v) <= UINT16_MAX);            \
+		WINPR_ASSERT((v) >= 0);                     \
+		Stream_Write_UINT16_BE_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b UINT16 as \b big endian to a \b wStream. The stream must be large enough
+	 * to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_UINT16_BE instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_UINT16_BE_unchecked(wStream* _s, UINT16 _v)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(_s->pointer);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 2);
-		*_s->pointer++ = ((_v) >> 8) & 0xFF;
-		*_s->pointer++ = (_v)&0xFF;
+
+		winpr_Data_Write_UINT16_BE(_s->pointer, _v);
+		_s->pointer += 2;
 	}
 
-	static INLINE void Stream_Write_UINT24_BE(wStream* _s, UINT32 _v)
+#define Stream_Write_INT16_BE(s, v)                \
+	do                                             \
+	{                                              \
+		WINPR_ASSERT((v) <= INT16_MAX);            \
+		WINPR_ASSERT((v) >= INT16_MIN);            \
+		Stream_Write_INT16_BE_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b UINT16 as \b big endian to a \b wStream. The stream must be large enough
+	 * to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_UINT16_BE instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 *
+	 * @since version 3.10.0
+	 */
+	static INLINE void Stream_Write_INT16_BE_unchecked(wStream* _s, INT16 _v)
+	{
+		WINPR_ASSERT(_s);
+		WINPR_ASSERT(_s->pointer);
+		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 2);
+
+		winpr_Data_Write_INT16_BE(_s->pointer, _v);
+		_s->pointer += 2;
+	}
+
+#define Stream_Write_UINT24_BE(s, v)                \
+	do                                              \
+	{                                               \
+		WINPR_ASSERT((v) <= 0xFFFFFF);              \
+		WINPR_ASSERT((v) >= 0);                     \
+		Stream_Write_UINT24_BE_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b UINT24 as \b big endian to a \b wStream. The stream must be large enough
+	 * to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_UINT24_BE instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_UINT24_BE_unchecked(wStream* _s, UINT32 _v)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(_s->pointer);
 		WINPR_ASSERT(_v <= 0x00FFFFFF);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 3);
+
 		*_s->pointer++ = ((_v) >> 16) & 0xFF;
 		*_s->pointer++ = ((_v) >> 8) & 0xFF;
-		*_s->pointer++ = (_v)&0xFF;
+		*_s->pointer++ = (_v) & 0xFF;
 	}
 
-	static INLINE void Stream_Write_INT32(wStream* _s, INT32 _v)
+#define Stream_Write_INT32(s, v)                \
+	do                                          \
+	{                                           \
+		WINPR_ASSERT((v) <= INT32_MAX);         \
+		WINPR_ASSERT((v) >= INT32_MIN);         \
+		Stream_Write_INT32_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b INT32 as \b little endian to a \b wStream. The stream must be large
+	 * enough to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_INT32 instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_INT32_unchecked(wStream* _s, INT32 _v)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(_s->pointer);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 4);
-		*_s->pointer++ = (_v)&0xFF;
-		*_s->pointer++ = ((_v) >> 8) & 0xFF;
-		*_s->pointer++ = ((_v) >> 16) & 0xFF;
-		*_s->pointer++ = ((_v) >> 24) & 0xFF;
+
+		winpr_Data_Write_INT32(_s->pointer, _v);
+		_s->pointer += 4;
 	}
 
-	static INLINE void Stream_Write_UINT32(wStream* _s, UINT32 _v)
+#define Stream_Write_INT32_BE(s, v)                \
+	do                                             \
+	{                                              \
+		WINPR_ASSERT((v) <= INT32_MAX);            \
+		WINPR_ASSERT((v) >= INT32_MIN);            \
+		Stream_Write_INT32_BE_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b INT32 as \b little endian to a \b wStream. The stream must be large
+	 * enough to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_INT32 instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 *
+	 * @since version 3.10.0
+	 */
+	static INLINE void Stream_Write_INT32_BE_unchecked(wStream* _s, INT32 _v)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(_s->pointer);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 4);
-		*_s->pointer++ = (_v)&0xFF;
-		*_s->pointer++ = ((_v) >> 8) & 0xFF;
-		*_s->pointer++ = ((_v) >> 16) & 0xFF;
-		*_s->pointer++ = ((_v) >> 24) & 0xFF;
+
+		winpr_Data_Write_INT32_BE(_s->pointer, _v);
+		_s->pointer += 4;
 	}
 
-	static INLINE void Stream_Write_UINT32_BE(wStream* _s, UINT32 _v)
+#define Stream_Write_UINT32(s, v)                \
+	do                                           \
+	{                                            \
+		WINPR_ASSERT((v) <= UINT32_MAX);         \
+		WINPR_ASSERT((v) >= 0);                  \
+		Stream_Write_UINT32_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b UINT32 as \b little endian to a \b wStream. The stream must be large
+	 * enough to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_UINT32 instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_UINT32_unchecked(wStream* _s, UINT32 _v)
+	{
+		WINPR_ASSERT(_s);
+		WINPR_ASSERT(_s->pointer);
+		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 4);
+
+		winpr_Data_Write_UINT32(_s->pointer, _v);
+		_s->pointer += 4;
+	}
+
+#define Stream_Write_UINT32_BE(s, v)                \
+	do                                              \
+	{                                               \
+		WINPR_ASSERT((v) <= UINT32_MAX);            \
+		WINPR_ASSERT((v) >= 0);                     \
+		Stream_Write_UINT32_BE_unchecked((s), (v)); \
+	} while (0)
+
+	/** @brief writes a \b UINT32 as \b big endian to a \b wStream. The stream must be large enough
+	 * to hold the data.
+	 *
+	 * Do not use directly, use the define @ref Stream_Write_UINT32_BE instead
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_UINT32_BE_unchecked(wStream* _s, UINT32 _v)
 	{
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 4);
-		Stream_Write_UINT16_BE(_s, ((_v) >> 16 & 0xFFFF));
-		Stream_Write_UINT16_BE(_s, ((_v)&0xFFFF));
+
+		winpr_Data_Write_UINT32_BE(_s->pointer, _v);
+		_s->pointer += 4;
 	}
 
+	/** @brief writes a \b UINT64 as \b little endian to a \b wStream. The stream must be large
+	 * enough to hold the data.
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
 	static INLINE void Stream_Write_UINT64(wStream* _s, UINT64 _v)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(_s->pointer);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 8);
-		*_s->pointer++ = (_v)&0xFF;
-		*_s->pointer++ = (_v >> 8) & 0xFF;
-		*_s->pointer++ = (_v >> 16) & 0xFF;
-		*_s->pointer++ = (_v >> 24) & 0xFF;
-		*_s->pointer++ = (_v >> 32) & 0xFF;
-		*_s->pointer++ = (_v >> 40) & 0xFF;
-		*_s->pointer++ = (_v >> 48) & 0xFF;
-		*_s->pointer++ = (_v >> 56) & 0xFF;
+
+		winpr_Data_Write_UINT64(_s->pointer, _v);
+		_s->pointer += 8;
 	}
+
+	/** @brief writes a \b UINT64 as \b big endian to a \b wStream. The stream must be large enough
+	 * to hold the data.
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 */
+	static INLINE void Stream_Write_UINT64_BE(wStream* _s, UINT64 _v)
+	{
+		WINPR_ASSERT(_s);
+		WINPR_ASSERT(_s->pointer);
+		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 8);
+
+		winpr_Data_Write_UINT64_BE(_s->pointer, _v);
+		_s->pointer += 8;
+	}
+
+	/** @brief writes a \b INT64 as \b little endian to a \b wStream. The stream must be large
+	 * enough to hold the data.
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 * \since version 3.10.0
+	 */
+	static INLINE void Stream_Write_INT64(wStream* _s, INT64 _v)
+	{
+		WINPR_ASSERT(_s);
+		WINPR_ASSERT(_s->pointer);
+		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 8);
+
+		winpr_Data_Write_INT64(_s->pointer, _v);
+		_s->pointer += 8;
+	}
+
+	/** @brief writes a \b INT64 as \b big endian to a \b wStream. The stream must be large enough
+	 * to hold the data.
+	 *
+	 * \param _s The stream to write to, must not be \b NULL
+	 * \param _v The value to write
+	 * \since version 3.10.0
+	 */
+	static INLINE void Stream_Write_INT64_BE(wStream* _s, INT64 _v)
+	{
+		WINPR_ASSERT(_s);
+		WINPR_ASSERT(_s->pointer);
+		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= 8);
+
+		winpr_Data_Write_INT64_BE(_s->pointer, _v);
+		_s->pointer += 8;
+	}
+
 	static INLINE void Stream_Write(wStream* _s, const void* _b, size_t _n)
 	{
 		if (_n > 0)
@@ -668,20 +1196,17 @@ extern "C"
 		Stream_Rewind(_s, sizeof(UINT64));
 	}
 
-	static INLINE void Stream_Zero(wStream* _s, size_t _n)
-	{
-		WINPR_ASSERT(_s);
-		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= (_n));
-		memset(_s->pointer, '\0', (_n));
-		Stream_Seek(_s, _n);
-	}
-
 	static INLINE void Stream_Fill(wStream* _s, int _v, size_t _n)
 	{
 		WINPR_ASSERT(_s);
 		WINPR_ASSERT(Stream_GetRemainingCapacity(_s) >= (_n));
 		memset(_s->pointer, _v, (_n));
 		Stream_Seek(_s, _n);
+	}
+
+	static INLINE void Stream_Zero(wStream* _s, size_t _n)
+	{
+		Stream_Fill(_s, '\0', _n);
 	}
 
 	static INLINE void Stream_Copy(wStream* _src, wStream* _dst, size_t _n)
@@ -696,12 +1221,23 @@ extern "C"
 		Stream_Seek(_src, _n);
 	}
 
+/** @brief Convenience macro to get a pointer to the stream buffer casted to a specific type
+ *
+ *  @since version 3.9.0
+ */
+#define Stream_BufferAs(s, type) WINPR_STREAM_CAST(type*, Stream_Buffer(s))
+
 	static INLINE BYTE* Stream_Buffer(wStream* _s)
 	{
 		WINPR_ASSERT(_s);
 		return _s->buffer;
 	}
 
+/** @brief Convenience macro to get a const pointer to the stream buffer casted to a specific type
+ *
+ *  @since version 3.9.0
+ */
+#define Stream_ConstBufferAs(s, type) WINPR_STREAM_CAST(type*, Stream_ConstBuffer(s))
 	static INLINE const BYTE* Stream_ConstBuffer(const wStream* _s)
 	{
 		WINPR_ASSERT(_s);
@@ -709,7 +1245,14 @@ extern "C"
 	}
 
 #define Stream_GetBuffer(_s, _b) _b = Stream_Buffer(_s)
-#define Stream_PointerAs(s, type) (type*)Stream_Pointer(s)
+
+/** @brief Convenience macro to get a pointer to the stream buffer casted to a specific type
+ *
+ *  @since version 3.9.0
+ */
+#define Stream_GetBufferAs(_s, _b) _b = Stream_BufferAs(_s, __typeof(_b))
+
+#define Stream_PointerAs(s, type) WINPR_STREAM_CAST(type*, Stream_Pointer(s))
 
 	static INLINE void* Stream_Pointer(wStream* _s)
 	{
@@ -724,6 +1267,12 @@ extern "C"
 	}
 
 #define Stream_GetPointer(_s, _p) _p = Stream_Pointer(_s)
+
+/** @brief Convenience macro to get a pointer to the stream pointer casted to a specific type
+ *
+ *  @since version 3.9.0
+ */
+#define Stream_GetPointerAs(_s, _p) _p = Stream_PointerAs(_s, __typeof(_p))
 
 #if defined(WITH_WINPR_DEPRECATED)
 	WINPR_API WINPR_DEPRECATED_VAR("Use Stream_SetPosition instead",
@@ -801,7 +1350,7 @@ extern "C"
 	                                                          size_t utfBufferCharLength);
 
 	/** \brief Writes a UTF-8 string UTF16 encoded to the stream. If the UTF-8
-	 *  string is short, the remainig characters are filled up with '\0'
+	 *  string is short, the remaining characters are filled up with '\0'
 	 *
 	 *  \param s The stream to write to
 	 *  \param wcharLength the length (in WCHAR characters) to write
@@ -819,12 +1368,35 @@ extern "C"
 
 	WINPR_API void StreamPool_Return(wStreamPool* pool, wStream* s);
 
-	WINPR_API wStream* StreamPool_Take(wStreamPool* pool, size_t size);
-
 	WINPR_API void Stream_AddRef(wStream* s);
 	WINPR_API void Stream_Release(wStream* s);
 
-	WINPR_API wStream* StreamPool_Find(wStreamPool* pool, BYTE* ptr);
+	WINPR_ATTR_MALLOC(Stream_Release, 1)
+	WINPR_API wStream* StreamPool_Take(wStreamPool* pool, size_t size);
+
+	WINPR_API wStream* StreamPool_Find(wStreamPool* pool, const BYTE* ptr);
+
+	/** Return the number of streams still not returned to the pool
+	 *
+	 *  @param pool The pool to query, must not be \b NULL
+	 *
+	 *  @return the number of streams still in use
+	 *
+	 *  @since version 3.10.0
+	 */
+	WINPR_API size_t StreamPool_UsedCount(wStreamPool* pool);
+
+	/** Wait up to \b timeoutMS milliseconds for streams to be returned to the pool.
+	 *  Use \b INFINITE for an infinite timeout
+	 *
+	 *  @param pool The pool to query, must not be \b NULL
+	 *  @param timeoutMS Milliseconds to wait at most, use \b INFINITE for no timeout.
+	 *
+	 *  @return \b TRUE in case all streams were returned, \b FALSE otherwise.
+	 *
+	 *  @since version 3.10.0
+	 */
+	WINPR_API BOOL StreamPool_WaitForReturn(wStreamPool* pool, UINT32 timeoutMS);
 
 	WINPR_API void StreamPool_Clear(wStreamPool* pool);
 

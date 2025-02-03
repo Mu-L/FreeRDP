@@ -26,6 +26,7 @@
 
 #include <freerdp/server/proxy/proxy_log.h>
 #include <freerdp/server/proxy/proxy_server.h>
+#include <freerdp/channels/drdynvc.h>
 
 #include "pf_client.h"
 #include "pf_utils.h"
@@ -50,6 +51,31 @@ static BOOL ChannelId_Compare(const void* pv1, const void* pv2)
 	WINPR_ASSERT(v1);
 	WINPR_ASSERT(v2);
 	return (*v1 == *v2);
+}
+
+static BOOL dyn_intercept(pServerContext* ps, const char* name)
+{
+	if (strncmp(DRDYNVC_SVC_CHANNEL_NAME, name, sizeof(DRDYNVC_SVC_CHANNEL_NAME)) != 0)
+		return FALSE;
+
+	WINPR_ASSERT(ps);
+	WINPR_ASSERT(ps->pdata);
+
+	const proxyConfig* cfg = ps->pdata->config;
+	WINPR_ASSERT(cfg);
+	if (!cfg->GFX)
+		return TRUE;
+	if (!cfg->AudioOutput)
+		return TRUE;
+	if (!cfg->AudioInput)
+		return TRUE;
+	if (!cfg->Multitouch)
+		return TRUE;
+	if (!cfg->VideoRedirection)
+		return TRUE;
+	if (!cfg->CameraRedirection)
+		return TRUE;
+	return FALSE;
 }
 
 pServerStaticChannelContext* StaticChannelContext_new(pServerContext* ps, const char* name,
@@ -77,6 +103,8 @@ pServerStaticChannelContext* StaticChannelContext_new(pServerContext* ps, const 
 	                          &channel) &&
 	    channel.intercept)
 		ret->channelMode = PF_UTILS_CHANNEL_INTERCEPT;
+	else if (dyn_intercept(ps, name))
+		ret->channelMode = PF_UTILS_CHANNEL_INTERCEPT;
 	else
 		ret->channelMode = pf_utils_get_channel_mode(ps->pdata->config, name);
 	return ret;
@@ -103,7 +131,7 @@ static void HashStaticChannelContext_free(void* ptr)
 static void client_to_proxy_context_free(freerdp_peer* client, rdpContext* ctx);
 static BOOL client_to_proxy_context_new(freerdp_peer* client, rdpContext* ctx)
 {
-	wObject* obj;
+	wObject* obj = NULL;
 	pServerContext* context = (pServerContext*)ctx;
 
 	WINPR_ASSERT(client);
@@ -170,7 +198,7 @@ void client_to_proxy_context_free(freerdp_peer* client, rdpContext* ctx)
 
 	if (context->dynvcReady)
 	{
-		CloseHandle(context->dynvcReady);
+		(void)CloseHandle(context->dynvcReady);
 		context->dynvcReady = NULL;
 	}
 
@@ -179,7 +207,7 @@ void client_to_proxy_context_free(freerdp_peer* client, rdpContext* ctx)
 	HashTable_Free(context->channelsByBackId);
 
 	if (context->vcm && (context->vcm != INVALID_HANDLE_VALUE))
-		WTSCloseServer((HANDLE)context->vcm);
+		WTSCloseServer(context->vcm);
 	context->vcm = NULL;
 }
 
@@ -225,7 +253,7 @@ void intercept_context_entry_free(void* obj)
 BOOL pf_context_copy_settings(rdpSettings* dst, const rdpSettings* src)
 {
 	BOOL rc = FALSE;
-	rdpSettings* before_copy;
+	rdpSettings* before_copy = NULL;
 	const FreeRDP_Settings_Keys_String to_revert[] = { FreeRDP_ConfigPath,
 		                                               FreeRDP_CertificateName };
 
@@ -262,7 +290,7 @@ BOOL pf_context_copy_settings(rdpSettings* dst, const rdpSettings* src)
 			goto out_fail;
 	}
 
-	/* We handle certificate management for this client ourselfes. */
+	/* We handle certificate management for this client ourselves. */
 	rc = freerdp_settings_set_bool(dst, FreeRDP_ExternalCertificateManagement, TRUE);
 
 out_fail:
@@ -273,8 +301,8 @@ out_fail:
 pClientContext* pf_context_create_client_context(const rdpSettings* clientSettings)
 {
 	RDP_CLIENT_ENTRY_POINTS clientEntryPoints;
-	pClientContext* pc;
-	rdpContext* context;
+	pClientContext* pc = NULL;
+	rdpContext* context = NULL;
 
 	WINPR_ASSERT(clientSettings);
 
@@ -298,8 +326,8 @@ error:
 proxyData* proxy_data_new(void)
 {
 	BYTE temp[16];
-	char* hex;
-	proxyData* pdata;
+	char* hex = NULL;
+	proxyData* pdata = NULL;
 
 	pdata = calloc(1, sizeof(proxyData));
 	if (!pdata)
@@ -360,13 +388,13 @@ void proxy_data_free(proxyData* pdata)
 		return;
 
 	if (pdata->abort_event)
-		CloseHandle(pdata->abort_event);
+		(void)CloseHandle(pdata->abort_event);
 
 	if (pdata->client_thread)
-		CloseHandle(pdata->client_thread);
+		(void)CloseHandle(pdata->client_thread);
 
 	if (pdata->gfx_server_ready)
-		CloseHandle(pdata->gfx_server_ready);
+		(void)CloseHandle(pdata->gfx_server_ready);
 
 	if (pdata->modules_info)
 		HashTable_Free(pdata->modules_info);
@@ -381,7 +409,7 @@ void proxy_data_abort_connect(proxyData* pdata)
 {
 	WINPR_ASSERT(pdata);
 	WINPR_ASSERT(pdata->abort_event);
-	SetEvent(pdata->abort_event);
+	(void)SetEvent(pdata->abort_event);
 	if (pdata->pc)
 		freerdp_abort_connect_context(&pdata->pc->context);
 }

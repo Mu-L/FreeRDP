@@ -19,18 +19,11 @@ define_channel_client_subsystem("rdpsnd" "pulse" "")
 
 find_package(PulseAudio REQUIRED)
 
-set(${MODULE_PREFIX}_SRCS
-	rdpsnd_pulse.c
-)
+set(${MODULE_PREFIX}_SRCS rdpsnd_pulse.c)
 
-set(${MODULE_PREFIX}_LIBS
-    winpr
-    freerdp
-    ${PULSEAUDIO_LIBRARY}
-    ${PULSEAUDIO_MAINLOOP_LIBRARY}
-)
+set(${MODULE_PREFIX}_LIBS winpr freerdp ${PULSEAUDIO_LIBRARY} ${PULSEAUDIO_MAINLOOP_LIBRARY})
 
 include_directories(..)
-include_directories(${PULSEAUDIO_INCLUDE_DIR})
+include_directories(SYSTEM ${PULSEAUDIO_INCLUDE_DIR})
 
 add_channel_client_subsystem_library(${MODULE_PREFIX} ${MODULE_NAME} ${CHANNEL_NAME} "" TRUE "")

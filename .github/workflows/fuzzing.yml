@@ -3,8 +3,10 @@ name: Fuzzing testing
 on:
   workflow_dispatch:
     branches: [ master, stable* ]
-  pull_request_target:
+  pull_request:
     branches: [ master, stable* ]
+  schedule:
+  - cron: "0 3 21 * *"
 
 jobs:
   fuzzing:
@@ -15,9 +17,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sanitizer: [address]
+        sanitizer: [address, undefined]
 
     steps:
+      - uses: actions/checkout@v4
+
       - name: Build fuzzers (${{ matrix.sanitizer }})
         id: build
         uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@master
@@ -33,7 +37,7 @@ jobs:
           dry-run: false
           sanitizer: ${{ matrix.sanitizer }}
       - name: Upload crash
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4.3.6
         if: failure() && steps.build.outcome == 'success'
         with:
           name: ${{ matrix.sanitizer }}-artifacts

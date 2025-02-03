@@ -160,7 +160,6 @@ struct xf_app_window
 
 void xf_ewmhints_init(xfContext* xfc);
 
-BOOL xf_GetCurrentDesktop(xfContext* xfc);
 BOOL xf_GetWorkArea(xfContext* xfc);
 
 void xf_SetWindowFullscreen(xfContext* xfc, xfWindow* window, BOOL fullscreen);
@@ -192,6 +191,7 @@ void xf_SetWindowRects(xfContext* xfc, xfAppWindow* appWindow, RECTANGLE_16* rec
 void xf_SetWindowVisibilityRects(xfContext* xfc, xfAppWindow* appWindow, UINT32 rectsOffsetX,
                                  UINT32 rectsOffsetY, RECTANGLE_16* rects, int nrects);
 void xf_SetWindowStyle(xfContext* xfc, xfAppWindow* appWindow, UINT32 style, UINT32 ex_style);
+void xf_SetWindowActions(xfContext* xfc, xfAppWindow* appWindow);
 void xf_UpdateWindowArea(xfContext* xfc, xfAppWindow* appWindow, int x, int y, int width,
                          int height);
 UINT xf_AppUpdateWindowFromSurface(xfContext* xfc, gdiGfxSurface* surface);
@@ -203,5 +203,8 @@ void xf_SetWindowMinMaxInfo(xfContext* xfc, xfAppWindow* appWindow, int maxWidth
 void xf_StartLocalMoveSize(xfContext* xfc, xfAppWindow* appWindow, int direction, int x, int y);
 void xf_EndLocalMoveSize(xfContext* xfc, xfAppWindow* appWindow);
 xfAppWindow* xf_AppWindowFromX11Window(xfContext* xfc, Window wnd);
+
+const char* window_styles_to_string(UINT32 style, char* buffer, size_t length);
+const char* window_styles_ex_to_string(UINT32 styleEx, char* buffer, size_t length);
 
 #endif /* FREERDP_CLIENT_X11_WINDOW_H */

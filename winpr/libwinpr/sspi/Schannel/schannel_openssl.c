@@ -33,6 +33,8 @@
 #include <openssl/err.h>
 #include <openssl/bio.h>
 
+#define LIMIT_INTMAX(a) ((a) > INT32_MAX) ? INT32_MAX : (int)(a)
+
 struct S_SCHANNEL_OPENSSL
 {
 	SSL* ssl;
@@ -65,6 +67,8 @@ static char* openssl_get_ssl_error_string(int ssl_error)
 
 		case SSL_ERROR_SSL:
 			return "SSL_ERROR_SSL";
+		default:
+			break;
 	}
 
 	return "SSL_ERROR_UNKNOWN";
@@ -115,7 +119,7 @@ static const SSL_METHOD* get_method(BOOL server)
 }
 int schannel_openssl_client_init(SCHANNEL_OPENSSL* context)
 {
-	int status;
+	int status = 0;
 	long options = 0;
 	context->ctx = SSL_CTX_new(get_method(FALSE));
 
@@ -151,7 +155,7 @@ int schannel_openssl_client_init(SCHANNEL_OPENSSL* context)
 	 * support empty fragments. This needs to be disabled.
 	 */
 	options |= SSL_OP_DONT_INSERT_EMPTY_FRAGMENTS;
-	SSL_CTX_set_options(context->ctx, options);
+	SSL_CTX_set_options(context->ctx, WINPR_ASSERTING_INT_CAST(uint64_t, options));
 	context->ssl = SSL_new(context->ctx);
 
 	if (!context->ssl)
@@ -225,7 +229,7 @@ fail:
 
 int schannel_openssl_server_init(SCHANNEL_OPENSSL* context)
 {
-	int status;
+	int status = 0;
 	unsigned long options = 0;
 
 	context->ctx = SSL_CTX_new(get_method(TRUE));
@@ -360,9 +364,9 @@ SECURITY_STATUS schannel_openssl_client_process_tokens(SCHANNEL_OPENSSL* context
                                                        PSecBufferDesc pInput,
                                                        PSecBufferDesc pOutput)
 {
-	int status;
-	int ssl_error;
-	PSecBuffer pBuffer;
+	int status = 0;
+	int ssl_error = 0;
+	PSecBuffer pBuffer = NULL;
 
 	if (!context->connected)
 	{
@@ -377,7 +381,8 @@ SECURITY_STATUS schannel_openssl_client_process_tokens(SCHANNEL_OPENSSL* context
 				return SEC_E_INVALID_TOKEN;
 
 			ERR_clear_error();
-			status = BIO_write(context->bioRead, pBuffer->pvBuffer, pBuffer->cbBuffer);
+			status =
+			    BIO_write(context->bioRead, pBuffer->pvBuffer, LIMIT_INTMAX(pBuffer->cbBuffer));
 			if (status < 0)
 				return SEC_E_INVALID_TOKEN;
 		}
@@ -406,11 +411,12 @@ SECURITY_STATUS schannel_openssl_client_process_tokens(SCHANNEL_OPENSSL* context
 
 		if (status > 0)
 		{
-			if (pBuffer->cbBuffer < (unsigned long)status)
+			if (pBuffer->cbBuffer < WINPR_ASSERTING_INT_CAST(uint32_t, status))
 				return SEC_E_INSUFFICIENT_MEMORY;
 
-			CopyMemory(pBuffer->pvBuffer, context->ReadBuffer, status);
-			pBuffer->cbBuffer = status;
+			CopyMemory(pBuffer->pvBuffer, context->ReadBuffer,
+			           WINPR_ASSERTING_INT_CAST(uint32_t, status));
+			pBuffer->cbBuffer = WINPR_ASSERTING_INT_CAST(uint32_t, status);
 			return (context->connected) ? SEC_E_OK : SEC_I_CONTINUE_NEEDED;
 		}
 		else
@@ -427,9 +433,9 @@ SECURITY_STATUS schannel_openssl_server_process_tokens(SCHANNEL_OPENSSL* context
                                                        PSecBufferDesc pInput,
                                                        PSecBufferDesc pOutput)
 {
-	int status;
-	int ssl_error;
-	PSecBuffer pBuffer;
+	int status = 0;
+	int ssl_error = 0;
+	PSecBuffer pBuffer = NULL;
 
 	if (!context->connected)
 	{
@@ -442,7 +448,7 @@ SECURITY_STATUS schannel_openssl_server_process_tokens(SCHANNEL_OPENSSL* context
 			return SEC_E_INVALID_TOKEN;
 
 		ERR_clear_error();
-		status = BIO_write(context->bioRead, pBuffer->pvBuffer, pBuffer->cbBuffer);
+		status = BIO_write(context->bioRead, pBuffer->pvBuffer, LIMIT_INTMAX(pBuffer->cbBuffer));
 		if (status >= 0)
 			status = SSL_accept(context->ssl);
 
@@ -475,11 +481,12 @@ SECURITY_STATUS schannel_openssl_server_process_tokens(SCHANNEL_OPENSSL* context
 
 		if (status > 0)
 		{
-			if (pBuffer->cbBuffer < (unsigned long)status)
+			if (pBuffer->cbBuffer < WINPR_ASSERTING_INT_CAST(uint32_t, status))
 				return SEC_E_INSUFFICIENT_MEMORY;
 
-			CopyMemory(pBuffer->pvBuffer, context->ReadBuffer, status);
-			pBuffer->cbBuffer = status;
+			CopyMemory(pBuffer->pvBuffer, context->ReadBuffer,
+			           WINPR_ASSERTING_INT_CAST(uint32_t, status));
+			pBuffer->cbBuffer = WINPR_ASSERTING_INT_CAST(uint32_t, status);
 			return (context->connected) ? SEC_E_OK : SEC_I_CONTINUE_NEEDED;
 		}
 		else
@@ -494,11 +501,11 @@ SECURITY_STATUS schannel_openssl_server_process_tokens(SCHANNEL_OPENSSL* context
 
 SECURITY_STATUS schannel_openssl_encrypt_message(SCHANNEL_OPENSSL* context, PSecBufferDesc pMessage)
 {
-	int status;
-	int ssl_error;
-	PSecBuffer pStreamBodyBuffer;
-	PSecBuffer pStreamHeaderBuffer;
-	PSecBuffer pStreamTrailerBuffer;
+	int status = 0;
+	int ssl_error = 0;
+	PSecBuffer pStreamBodyBuffer = NULL;
+	PSecBuffer pStreamHeaderBuffer = NULL;
+	PSecBuffer pStreamTrailerBuffer = NULL;
 	pStreamHeaderBuffer = sspi_FindSecBuffer(pMessage, SECBUFFER_STREAM_HEADER);
 	pStreamBodyBuffer = sspi_FindSecBuffer(pMessage, SECBUFFER_DATA);
 	pStreamTrailerBuffer = sspi_FindSecBuffer(pMessage, SECBUFFER_STREAM_TRAILER);
@@ -506,7 +513,8 @@ SECURITY_STATUS schannel_openssl_encrypt_message(SCHANNEL_OPENSSL* context, PSec
 	if ((!pStreamHeaderBuffer) || (!pStreamBodyBuffer) || (!pStreamTrailerBuffer))
 		return SEC_E_INVALID_TOKEN;
 
-	status = SSL_write(context->ssl, pStreamBodyBuffer->pvBuffer, pStreamBodyBuffer->cbBuffer);
+	status = SSL_write(context->ssl, pStreamBodyBuffer->pvBuffer,
+	                   LIMIT_INTMAX(pStreamBodyBuffer->cbBuffer));
 
 	if (status < 0)
 	{
@@ -520,7 +528,7 @@ SECURITY_STATUS schannel_openssl_encrypt_message(SCHANNEL_OPENSSL* context, PSec
 	if (status > 0)
 	{
 		size_t ustatus = (size_t)status;
-		size_t length;
+		size_t length = 0;
 		size_t offset = 0;
 
 		length =
@@ -542,20 +550,20 @@ SECURITY_STATUS schannel_openssl_encrypt_message(SCHANNEL_OPENSSL* context, PSec
 
 SECURITY_STATUS schannel_openssl_decrypt_message(SCHANNEL_OPENSSL* context, PSecBufferDesc pMessage)
 {
-	int status;
-	int length;
-	BYTE* buffer;
-	int ssl_error;
-	PSecBuffer pBuffer;
+	int status = 0;
+	int length = 0;
+	BYTE* buffer = NULL;
+	int ssl_error = 0;
+	PSecBuffer pBuffer = NULL;
 	pBuffer = sspi_FindSecBuffer(pMessage, SECBUFFER_DATA);
 
 	if (!pBuffer)
 		return SEC_E_INVALID_TOKEN;
 
 	ERR_clear_error();
-	status = BIO_write(context->bioRead, pBuffer->pvBuffer, pBuffer->cbBuffer);
+	status = BIO_write(context->bioRead, pBuffer->pvBuffer, LIMIT_INTMAX(pBuffer->cbBuffer));
 	if (status > 0)
-		status = SSL_read(context->ssl, pBuffer->pvBuffer, pBuffer->cbBuffer);
+		status = SSL_read(context->ssl, pBuffer->pvBuffer, LIMIT_INTMAX(pBuffer->cbBuffer));
 
 	if (status < 0)
 	{
@@ -569,7 +577,7 @@ SECURITY_STATUS schannel_openssl_decrypt_message(SCHANNEL_OPENSSL* context, PSec
 	pMessage->pBuffers[0].cbBuffer = 5;
 	pMessage->pBuffers[1].BufferType = SECBUFFER_DATA;
 	pMessage->pBuffers[1].pvBuffer = buffer;
-	pMessage->pBuffers[1].cbBuffer = length;
+	pMessage->pBuffers[1].cbBuffer = WINPR_ASSERTING_INT_CAST(uint32_t, length);
 	pMessage->pBuffers[2].BufferType = SECBUFFER_STREAM_TRAILER;
 	pMessage->pBuffers[2].cbBuffer = 36;
 	pMessage->pBuffers[3].BufferType = SECBUFFER_EMPTY;
@@ -579,7 +587,7 @@ SECURITY_STATUS schannel_openssl_decrypt_message(SCHANNEL_OPENSSL* context, PSec
 
 SCHANNEL_OPENSSL* schannel_openssl_new(void)
 {
-	SCHANNEL_OPENSSL* context;
+	SCHANNEL_OPENSSL* context = NULL;
 	context = (SCHANNEL_OPENSSL*)calloc(1, sizeof(SCHANNEL_OPENSSL));
 
 	if (context != NULL)

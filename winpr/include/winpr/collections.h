@@ -62,6 +62,28 @@ extern "C"
 		OBJECT_EQUALS_FN fnObjectEquals;
 	} wObject;
 
+	/* utility function with compatible arguments for string data */
+
+	/** @brief helper function to clone a string
+	 *  @param pvstr the source string to clone
+	 *  @return A clone of the source or \b NULL
+	 *  @since version 3.3.0
+	 */
+	WINPR_API void* winpr_ObjectStringClone(const void* pvstr);
+
+	/** @brief helper function to clone a WCHAR string
+	 *  @param pvstr the source string to clone
+	 *  @return A clone of the source or \b NULL
+	 *  @since version 3.3.0
+	 */
+	WINPR_API void* winpr_ObjectWStringClone(const void* pvstr);
+
+	/** @brief helper function to free a (WCHAR) string
+	 *  @param pvstr the string to free
+	 *  @since version 3.3.0
+	 */
+	WINPR_API void winpr_ObjectStringFree(void* pvstr);
+
 	/* System.Collections.Queue */
 
 	typedef struct s_wQueue wQueue;
@@ -284,7 +306,7 @@ extern "C"
 	 *  @param value The value to store for the \b key. May be \b NULL. if set cloned with \b
 	 * fnObjectNew
 	 *
-	 *  @return \b TRUE for successfull addition, \b FALSE for failure
+	 *  @return \b TRUE for successful addition, \b FALSE for failure
 	 */
 	WINPR_API BOOL ListDictionary_Add(wListDictionary* listDictionary, const void* key,
 	                                  const void* value);
@@ -586,7 +608,7 @@ extern "C"
 	 */
 	WINPR_API void CountdownEvent_Free(wCountdownEvent* countdown);
 
-	/** @brief Allocte a CountdownEvent with \b initialCount
+	/** @brief Allocate a CountdownEvent with \b initialCount
 	 *
 	 *  @param initialCount The initial value of the event
 	 *

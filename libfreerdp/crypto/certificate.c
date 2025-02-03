@@ -46,6 +46,7 @@
 #include <openssl/core_names.h>
 #include <openssl/param_build.h>
 #include <openssl/evp.h>
+#include <openssl/x509.h>
 #endif
 
 #include "certificate.h"
@@ -58,8 +59,8 @@
 
 #define TAG FREERDP_TAG("core")
 
-#define CERTIFICATE_TAG FREERDP_TAG("core.certificate")
 #ifdef WITH_DEBUG_CERTIFICATE
+#define CERTIFICATE_TAG FREERDP_TAG("core.certificate")
 #define DEBUG_CERTIFICATE(...) WLog_DBG(TAG, __VA_ARGS__)
 #else
 #define DEBUG_CERTIFICATE(...) \
@@ -301,8 +302,8 @@ static BOOL certificate_read_x509_certificate(const rdpCertBlob* cert, rdpCertIn
 	size_t exponent_length = 0;
 	int error = 0;
 
-	if (!cert || !info)
-		return FALSE;
+	WINPR_ASSERT(cert);
+	WINPR_ASSERT(info);
 
 	cert_info_free(info);
 
@@ -481,22 +482,39 @@ static OSSL_PARAM* get_params(const BIGNUM* e, const BIGNUM* mod)
 	OSSL_PARAM* parameters = NULL;
 	OSSL_PARAM_BLD* param = OSSL_PARAM_BLD_new();
 	if (!param)
+	{
+		WLog_ERR(TAG, "OSSL_PARAM_BLD_new() failed");
 		return NULL;
+	}
 
 	const int bits = BN_num_bits(e);
 	if ((bits < 0) || (bits > 32))
+	{
+		WLog_ERR(TAG, "BN_num_bits(e) out of range: 0 <= %d <= 32", bits);
 		goto fail;
+	}
 
 	UINT ie = 0;
 	const int ne = BN_bn2nativepad(e, (BYTE*)&ie, sizeof(ie));
 	if ((ne < 0) || (ne > 4))
+	{
+		WLog_ERR(TAG, "BN_bn2nativepad(e, (BYTE*)&ie, sizeof(ie)) out of range: 0<= %d <= 4", ne);
 		goto fail;
+	}
 	if (OSSL_PARAM_BLD_push_BN(param, OSSL_PKEY_PARAM_RSA_N, mod) != 1)
+	{
+		WLog_ERR(TAG, "OSSL_PARAM_BLD_push_BN(param, OSSL_PKEY_PARAM_RSA_N, mod) failed");
 		goto fail;
+	}
 	if (OSSL_PARAM_BLD_push_uint(param, OSSL_PKEY_PARAM_RSA_E, ie) != 1)
+	{
+		WLog_ERR(TAG, "OSSL_PARAM_BLD_push_uint(param, OSSL_PKEY_PARAM_RSA_E, ie) failed");
 		goto fail;
+	}
 
 	parameters = OSSL_PARAM_BLD_to_param(param);
+	if (!parameters)
+		WLog_ERR(TAG, "OSSL_PARAM_BLD_to_param(param) failed");
 fail:
 	OSSL_PARAM_BLD_free(param);
 
@@ -520,30 +538,55 @@ static BOOL update_x509_from_info(rdpCertificate* cert)
 #if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	RSA* rsa = RSA_new();
 	if (!rsa)
+	{
+		WLog_ERR(TAG, "RSA_new() failed");
 		goto fail;
+	}
 #endif
 
 	if (!mod || !e)
+	{
+		WLog_ERR(TAG, "failure: mod=%p, e=%p", mod, e);
 		goto fail;
-	if (!BN_bin2bn(info->Modulus, info->ModulusLength, mod))
+	}
+
+	WINPR_ASSERT(info->ModulusLength <= INT_MAX);
+	if (!BN_bin2bn(info->Modulus, (int)info->ModulusLength, mod))
+	{
+		WLog_ERR(TAG, "BN_bin2bn(info->Modulus, (int)info->ModulusLength, mod) failed");
 		goto fail;
-	if (!BN_bin2bn(info->exponent, sizeof(info->exponent), e))
+	}
+
+	if (!BN_bin2bn(info->exponent, (int)sizeof(info->exponent), e))
+	{
+		WLog_ERR(TAG, "BN_bin2bn(info->exponent, (int)sizeof(info->exponent), e) failed");
 		goto fail;
+	}
 
 #if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	const int rec = RSA_set0_key(rsa, mod, e, NULL);
 	if (rec != 1)
+	{
+		WLog_ERR(TAG, "RSA_set0_key(rsa, mod, e, NULL) failed");
 		goto fail;
+	}
 
 	cert->x509 = x509_from_rsa(rsa);
 #else
 	EVP_PKEY* pkey = NULL;
 	EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL);
 	if (!ctx)
+	{
+		WLog_ERR(TAG, "EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, NULL) failed");
 		goto fail2;
+	}
 	const int xx = EVP_PKEY_fromdata_init(ctx);
 	if (xx != 1)
+	{
+		WLog_ERR(TAG, "EVP_PKEY_fromdata_init(ctx) failed");
 		goto fail2;
+	}
+
 	OSSL_PARAM* parameters = get_params(e, mod);
 	if (!parameters)
 		goto fail2;
@@ -551,13 +594,21 @@ static BOOL update_x509_from_info(rdpCertificate* cert)
 	const int rc2 = EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, parameters);
 	OSSL_PARAM_free(parameters);
 	if (rc2 <= 0)
+	{
+		WLog_ERR(TAG, "EVP_PKEY_fromdata(ctx, &pkey, EVP_PKEY_PUBLIC_KEY, parameters) failed");
 		goto fail2;
+	}
 
 	cert->x509 = X509_new();
 	if (!cert->x509)
+	{
+		WLog_ERR(TAG, "X509_new() failed");
 		goto fail2;
+	}
+
 	if (X509_set_pubkey(cert->x509, pkey) != 1)
 	{
+		WLog_ERR(TAG, "X509_set_pubkey(cert->x509, pkey) failed");
 		X509_free(cert->x509);
 		cert->x509 = NULL;
 	}
@@ -571,6 +622,9 @@ fail2:
 	rc = TRUE;
 
 fail:
+	if (!rc)
+		WLog_ERR(TAG, "failed to update x509 from rdpCertInfo");
+
 #if !defined(OPENSSL_VERSION_MAJOR) || (OPENSSL_VERSION_MAJOR < 3)
 	if (rsa)
 		RSA_free(rsa);
@@ -600,7 +654,7 @@ static BOOL certificate_process_server_public_key(rdpCertificate* cert, wStream*
 
 	if (memcmp(magic, rsa_magic, sizeof(magic)) != 0)
 	{
-		WLog_ERR(TAG, "magic error");
+		WLog_ERR(TAG, "invalid RSA magic bytes");
 		return FALSE;
 	}
 
@@ -612,14 +666,33 @@ static BOOL certificate_process_server_public_key(rdpCertificate* cert, wStream*
 	Stream_Read_UINT32(s, datalen);
 	Stream_Read(s, info->exponent, 4);
 
-	if ((keylen <= 8) || (!Stream_CheckAndLogRequiredLength(TAG, s, keylen)))
+	if (keylen <= 8)
+	{
+		WLog_ERR(TAG, "Invalid RSA keylen=%" PRIu32 " <= 8", keylen);
 		return FALSE;
-
+	}
+	if (!Stream_CheckAndLogRequiredLength(TAG, s, keylen))
+		return FALSE;
+	if (keylen != (bitlen / 8ull) + 8ull)
+	{
+		WLog_ERR(TAG, "Invalid RSA key bitlen %" PRIu32 ", expected %" PRIu32, bitlen,
+		         (keylen - 8) * 8);
+		return FALSE;
+	}
+	if (datalen != (bitlen / 8ull) - 1ull)
+	{
+		WLog_ERR(TAG, "Invalid RSA key datalen %" PRIu32 ", expected %" PRIu32, datalen,
+		         (bitlen / 8ull) - 1ull);
+		return FALSE;
+	}
 	info->ModulusLength = keylen - 8;
 	BYTE* tmp = realloc(info->Modulus, info->ModulusLength);
 
 	if (!tmp)
+	{
+		WLog_ERR(TAG, "Failed to reallocate modulus of length %" PRIu32, info->ModulusLength);
 		return FALSE;
+	}
 	info->Modulus = tmp;
 
 	Stream_Read(s, info->Modulus, info->ModulusLength);
@@ -632,9 +705,6 @@ static BOOL certificate_process_server_public_signature(rdpCertificate* certific
                                                         wStream* s, UINT32 siglen)
 {
 	WINPR_ASSERT(certificate);
-#if defined(CERT_VALIDATE_PADDING) || defined(CERT_VALIDATE_RSA)
-	size_t i, sum;
-#endif
 #if defined(CERT_VALIDATE_RSA)
 	BYTE sig[TSSK_KEY_LENGTH];
 #endif
@@ -666,16 +736,17 @@ static BOOL certificate_process_server_public_signature(rdpCertificate* certific
 
 		/* Last 8 bytes shall be all zero. */
 #if defined(CERT_VALIDATE_PADDING)
-
-	for (sum = 0, i = sizeof(encsig) - 8; i < sizeof(encsig); i++)
-		sum += encsig[i];
-
-	if (sum != 0)
 	{
-		WLog_ERR(TAG, "invalid signature");
-		return FALSE;
-	}
+		size_t sum = 0;
+		for (size_t i = sizeof(encsig) - 8; i < sizeof(encsig); i++)
+			sum += encsig[i];
 
+		if (sum != 0)
+		{
+			WLog_ERR(TAG, "invalid signature");
+			return FALSE;
+		}
+	}
 #endif
 #if defined(CERT_VALIDATE_RSA)
 
@@ -703,16 +774,17 @@ static BOOL certificate_process_server_public_signature(rdpCertificate* certific
 	 * The 18th through 62nd bytes are each 0xFF.
 	 * The 63rd byte is 0x01.
 	 */
-
-	for (sum = 0, i = 17; i < 62; i++)
-		sum += sig[i];
-
-	if (sig[16] != 0x00 || sum != 0xFF * (62 - 17) || sig[62] != 0x01)
 	{
-		WLog_ERR(TAG, "invalid signature");
-		return FALSE;
-	}
+		size_t sum = 0;
+		for (size_t i = 17; i < 62; i++)
+			sum += sig[i];
 
+		if (sig[16] != 0x00 || sum != 0xFF * (62 - 17) || sig[62] != 0x01)
+		{
+			WLog_ERR(TAG, "invalid signature");
+			return FALSE;
+		}
+	}
 #endif
 	return TRUE;
 }
@@ -764,7 +836,7 @@ static BOOL certificate_read_server_proprietary_certificate(rdpCertificate* cert
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 4))
 		return FALSE;
 
-	sigdatalen = Stream_PointerAs(s, const BYTE) - sigdata;
+	sigdatalen = WINPR_ASSERTING_INT_CAST(size_t, Stream_PointerAs(s, const BYTE) - sigdata);
 	Stream_Read_UINT16(s, wSignatureBlobType);
 
 	if (wSignatureBlobType != BB_RSA_SIGNATURE_BLOB)
@@ -915,7 +987,12 @@ SSIZE_T freerdp_certificate_write_server_cert(const rdpCertificate* certificate,
 	}
 
 	const size_t end = Stream_GetPosition(s);
-	return end - start;
+	if (start > end)
+		return -1;
+
+	const size_t diff = end - start;
+	WINPR_ASSERT(diff <= SSIZE_MAX);
+	return (SSIZE_T)diff;
 }
 
 /**
@@ -958,6 +1035,7 @@ static BOOL certificate_read_server_x509_certificate_chain(rdpCertificate* cert,
 
 			if (!res)
 			{
+				WLog_ERR(TAG, "Failed to read x509 certificate");
 				return FALSE;
 			}
 
@@ -1003,7 +1081,8 @@ BOOL freerdp_certificate_read_server_cert(rdpCertificate* certificate, const BYT
                                           size_t length)
 {
 	BOOL ret = FALSE;
-	wStream *s, sbuffer;
+	wStream* s = NULL;
+	wStream sbuffer;
 	UINT32 dwVersion = 0;
 
 	WINPR_ASSERT(certificate);
@@ -1149,7 +1228,7 @@ void certificate_free_int(rdpCertificate* cert)
 	if (cert->x509)
 		X509_free(cert->x509);
 	if (cert->chain)
-		sk_X509_free(cert->chain);
+		sk_X509_pop_free(cert->chain, X509_free);
 
 	certificate_free_x509_certificate_chain(&cert->x509_cert_chain);
 	cert_info_free(&cert->cert_info);
@@ -1227,10 +1306,10 @@ rdpCertificate* freerdp_certificate_new_from_der(const BYTE* data, size_t length
 {
 	rdpCertificate* cert = freerdp_certificate_new();
 
-	if (!cert || !data || (length == 0))
+	if (!cert || !data || (length == 0) || (length > INT_MAX))
 		goto fail;
 	const BYTE* ptr = data;
-	cert->x509 = d2i_X509(NULL, &ptr, length);
+	cert->x509 = d2i_X509(NULL, &ptr, (int)length);
 	if (!cert->x509)
 		goto fail;
 	if (!freerdp_rsa_from_x509(cert))
@@ -1249,7 +1328,8 @@ rdpCertificate* freerdp_certificate_new_from_x509(const X509* xcert, const STACK
 	if (!cert)
 		return NULL;
 
-	cert->x509 = X509_dup(xcert);
+	X509* wcert = WINPR_CAST_CONST_PTR_AWAY(xcert, X509*);
+	cert->x509 = X509_dup(wcert);
 	if (!cert->x509)
 		goto fail;
 
@@ -1257,9 +1337,8 @@ rdpCertificate* freerdp_certificate_new_from_x509(const X509* xcert, const STACK
 		goto fail;
 
 	if (chain)
-	{
-		cert->chain = sk_X509_dup(chain);
-	}
+		cert->chain = sk_X509_deep_copy(chain, X509_const_dup, X509_free);
+
 	return cert;
 fail:
 	freerdp_certificate_free(cert);
@@ -1326,6 +1405,9 @@ char* freerdp_certificate_get_fingerprint_by_hash_ex(const rdpCertificate* cert,
 	if (!fp)
 		return NULL;
 
+	if (fp_len < 1)
+		goto fail;
+
 	size = fp_len * 3 + 1;
 	fp_buffer = calloc(size, sizeof(char));
 	if (!fp_buffer)
@@ -1334,9 +1416,9 @@ char* freerdp_certificate_get_fingerprint_by_hash_ex(const rdpCertificate* cert,
 	pos = 0;
 
 	size_t i = 0;
-	for (i = 0; i < (fp_len - 1); i++)
+	for (; i < (fp_len - 1); i++)
 	{
-		int rc;
+		int rc = 0;
 		char* p = &fp_buffer[pos];
 		if (separator)
 			rc = sprintf_s(p, size - pos, "%02" PRIx8 ":", fp[i]);
@@ -1347,7 +1429,7 @@ char* freerdp_certificate_get_fingerprint_by_hash_ex(const rdpCertificate* cert,
 		pos += (size_t)rc;
 	}
 
-	sprintf_s(&fp_buffer[pos], size - pos, "%02" PRIx8 "", fp[i]);
+	(void)sprintf_s(&fp_buffer[pos], size - pos, "%02" PRIx8 "", fp[i]);
 
 	free(fp);
 
@@ -1365,9 +1447,15 @@ static BOOL bio_read_pem(BIO* bio, char** ppem, size_t* plength)
 	WINPR_ASSERT(bio);
 	WINPR_ASSERT(ppem);
 
+	const size_t blocksize = 2048;
 	size_t offset = 0;
-	size_t length = 2048;
+	size_t length = blocksize;
 	char* pem = NULL;
+
+	*ppem = NULL;
+	if (plength)
+		*plength = 0;
+
 	while (offset < length)
 	{
 		char* tmp = realloc(pem, length + 1);
@@ -1377,7 +1465,7 @@ static BOOL bio_read_pem(BIO* bio, char** ppem, size_t* plength)
 
 		ERR_clear_error();
 
-		const int status = BIO_read(bio, &pem[offset], length - offset);
+		const int status = BIO_read(bio, &pem[offset], (int)(length - offset));
 		if (status < 0)
 		{
 			WLog_ERR(TAG, "failed to read certificate");
@@ -1390,7 +1478,7 @@ static BOOL bio_read_pem(BIO* bio, char** ppem, size_t* plength)
 		offset += (size_t)status;
 		if (length - offset > 0)
 			break;
-		length *= 2;
+		length += blocksize;
 	}
 	pem[offset] = '\0';
 	*ppem = pem;
@@ -1398,25 +1486,30 @@ static BOOL bio_read_pem(BIO* bio, char** ppem, size_t* plength)
 		*plength = offset;
 	rc = TRUE;
 fail:
+	if (!rc)
+		free(pem);
+
 	return rc;
 }
 
 char* freerdp_certificate_get_pem(const rdpCertificate* cert, size_t* pLength)
 {
-	char* pem = NULL;
+	return freerdp_certificate_get_pem_ex(cert, pLength, TRUE);
+}
+
+char* freerdp_certificate_get_pem_ex(const rdpCertificate* cert, size_t* pLength,
+                                     BOOL withCertChain)
+{
 	WINPR_ASSERT(cert);
 
 	if (!cert->x509)
 		return NULL;
 
-	BIO* bio;
-	int status;
-
 	/**
 	 * Don't manage certificates internally, leave it up entirely to the external client
 	 * implementation
 	 */
-	bio = BIO_new(BIO_s_mem());
+	BIO* bio = BIO_new(BIO_s_mem());
 
 	if (!bio)
 	{
@@ -1424,32 +1517,32 @@ char* freerdp_certificate_get_pem(const rdpCertificate* cert, size_t* pLength)
 		return NULL;
 	}
 
-	status = PEM_write_bio_X509(bio, cert->x509);
+	char* pem = NULL;
 
+	const int status = PEM_write_bio_X509(bio, cert->x509);
 	if (status < 0)
 	{
 		WLog_ERR(TAG, "PEM_write_bio_X509 failure: %d", status);
 		goto fail;
 	}
 
-#if 0
-        if (chain)
-        {
-            count = sk_X509_num(chain);
-            for (x = 0; x < count; x++)
-            {
-                X509* c = sk_X509_value(chain, x);
-                status = PEM_write_bio_X509(bio, c);
-                if (status < 0)
-                {
-                    WLog_ERR(TAG, "PEM_write_bio_X509 failure: %d", status);
-                    goto fail;
-                }
-            }
-        }
-#endif
-	if (!bio_read_pem(bio, &pem, pLength))
-		goto fail;
+	if (cert->chain && withCertChain)
+	{
+		const int count = sk_X509_num(cert->chain);
+		for (int x = 0; x < count; x++)
+		{
+			X509* c = sk_X509_value(cert->chain, x);
+			const int rc = PEM_write_bio_X509(bio, c);
+			if (rc < 0)
+			{
+				WLog_ERR(TAG, "PEM_write_bio_X509 failure: %d", rc);
+				goto fail;
+			}
+		}
+	}
+
+	(void)bio_read_pem(bio, &pem, pLength);
+
 fail:
 	BIO_free_all(bio);
 	return pem;
@@ -1479,6 +1572,12 @@ char* freerdp_certificate_get_email(const rdpCertificate* cert)
 	return x509_utils_get_email(cert->x509);
 }
 
+char* freerdp_certificate_get_validity(const rdpCertificate* cert, BOOL startDate)
+{
+	WINPR_ASSERT(cert);
+	return x509_utils_get_date(cert->x509, startDate);
+}
+
 BOOL freerdp_certificate_check_eku(const rdpCertificate* cert, int nid)
 {
 	WINPR_ASSERT(cert);
@@ -1490,7 +1589,7 @@ BOOL freerdp_certificate_get_public_key(const rdpCertificate* cert, BYTE** Publi
 {
 	BYTE* ptr = NULL;
 	BYTE* optr = NULL;
-	int length;
+	int length = 0;
 	BOOL status = FALSE;
 	EVP_PKEY* pkey = NULL;
 
@@ -1512,7 +1611,7 @@ BOOL freerdp_certificate_get_public_key(const rdpCertificate* cert, BYTE** Publi
 		goto exit;
 	}
 
-	*PublicKey = optr = ptr = (BYTE*)calloc(length, sizeof(BYTE));
+	*PublicKey = optr = ptr = (BYTE*)calloc(WINPR_ASSERTING_INT_CAST(size_t, length), sizeof(BYTE));
 
 	if (!ptr)
 		goto exit;
@@ -1590,8 +1689,10 @@ BOOL freerdp_certificate_publickey_encrypt(const rdpCertificate* cert, const BYT
 	if (!ctx)
 		return FALSE;
 
-	size_t outputSize = EVP_PKEY_size(pkey);
+	size_t outputSize = WINPR_ASSERTING_INT_CAST(size_t, EVP_PKEY_size(pkey));
 	output = malloc(outputSize);
+	if (output == NULL)
+		goto out;
 	*pcbOutput = outputSize;
 
 	if (EVP_PKEY_encrypt_init(ctx) != 1 ||
@@ -1638,7 +1739,7 @@ BYTE* freerdp_certificate_get_der(const rdpCertificate* cert, size_t* pLength)
 	if (rc <= 0)
 		return NULL;
 
-	BYTE* ptr = calloc(rc + 1, sizeof(BYTE));
+	BYTE* ptr = calloc(WINPR_ASSERTING_INT_CAST(size_t, rc) + 1, sizeof(BYTE));
 	if (!ptr)
 		return NULL;
 	BYTE* i2d_ptr = ptr;
@@ -1717,7 +1818,7 @@ char* freerdp_certificate_get_param(const rdpCertificate* cert, enum FREERDP_CER
 	}
 #endif
 
-	const size_t bnsize = BN_num_bytes(bn);
+	const size_t bnsize = WINPR_ASSERTING_INT_CAST(size_t, BN_num_bytes(bn));
 	char* rc = calloc(bnsize + 1, sizeof(char));
 	if (!rc)
 		goto fail;

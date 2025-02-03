@@ -62,10 +62,10 @@ state_run_t multitransport_recv_request(rdpMultitransport* multi, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 24))
 		return STATE_RUN_FAILED;
 
-	UINT32 requestId;
-	UINT16 requestedProto;
-	UINT16 reserved;
-	const BYTE* cookie;
+	UINT32 requestId = 0;
+	UINT16 requestedProto = 0;
+	UINT16 reserved = 0;
+	const BYTE* cookie = NULL;
 
 	Stream_Read_UINT32(s, requestId);      /* requestId (4 bytes) */
 	Stream_Read_UINT16(s, requestedProto); /* requestedProtocol (2 bytes) */
@@ -85,7 +85,7 @@ state_run_t multitransport_recv_request(rdpMultitransport* multi, wStream* s)
 		WLog_WARN(TAG,
 		          "reserved is %" PRIu16 " instead of 0, skipping %" PRIuz "bytes of unknown data",
 		          reserved, Stream_GetRemainingLength(s));
-		Stream_SafeSeek(s, Stream_GetRemainingLength(s));
+		(void)Stream_SafeSeek(s, Stream_GetRemainingLength(s));
 	}
 
 	WINPR_ASSERT(multi->MtRequest);
@@ -151,7 +151,11 @@ BOOL multitransport_client_send_response(rdpMultitransport* multi, UINT32 reqId,
 	}
 
 	Stream_Write_UINT32(s, reqId); /* requestId (4 bytes) */
-	Stream_Write_UINT32(s, hr);    /* HResult (4 bytes) */
+
+	/* [MS-RDPBCGR] 2.2.15.2 Client Initiate Multitransport Response PDU defines this as 4byte
+	 * UNSIGNED but https://learn.microsoft.com/en-us/windows/win32/learnwin32/error-codes-in-com
+	 * defines this as signed... assume the spec is (implicitly) assuming twos complement. */
+	Stream_Write_INT32(s, hr); /* HResult (4 bytes) */
 	return rdp_send_message_channel_pdu(multi->rdp, s, SEC_TRANSPORT_RSP);
 }
 
@@ -172,8 +176,8 @@ state_run_t multitransport_recv_response(rdpMultitransport* multi, wStream* s)
 	if (!Stream_CheckAndLogRequiredLength(TAG, s, 8))
 		return STATE_RUN_FAILED;
 
-	UINT32 requestId;
-	HRESULT hr;
+	UINT32 requestId = 0;
+	UINT32 hr = 0;
 
 	Stream_Read_UINT32(s, requestId); /* requestId (4 bytes) */
 	Stream_Read_UINT32(s, hr);        /* hrResponse (4 bytes) */

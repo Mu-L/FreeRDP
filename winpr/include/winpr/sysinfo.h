@@ -31,8 +31,9 @@ extern "C"
 {
 #endif
 
-#ifndef _WIN32
-
+#ifdef _WIN32
+#include <winnt.h>
+#else
 #define PROCESSOR_ARCHITECTURE_INTEL 0
 #define PROCESSOR_ARCHITECTURE_MIPS 1
 #define PROCESSOR_ARCHITECTURE_ALPHA 2
@@ -84,8 +85,8 @@ extern "C"
 			{
 				WORD wProcessorArchitecture;
 				WORD wReserved;
-			};
-		};
+			} DUMMYSTRUCTNAME;
+		} DUMMYUNIONNAME;
 
 		DWORD dwPageSize;
 		LPVOID lpMinimumApplicationAddress;
@@ -227,6 +228,19 @@ extern "C"
 #define PF_ARM_64BIT_LOADSTORE_ATOMIC 25
 #define PF_ARM_EXTERNAL_CACHE_AVAILABLE 26
 #define PF_ARM_FMAC_INSTRUCTIONS_AVAILABLE 27
+#define PF_SSSE3_INSTRUCTIONS_AVAILABLE 36          /** @since version 3.3.0 */
+#define PF_SSE4_1_INSTRUCTIONS_AVAILABLE 37         /** @since version 3.3.0 */
+#define PF_SSE4_2_INSTRUCTIONS_AVAILABLE 38         /** @since version 3.3.0 */
+#define PF_AVX_INSTRUCTIONS_AVAILABLE 39            /** @since version 3.3.0 */
+#define PF_AVX2_INSTRUCTIONS_AVAILABLE 40           /** @since version 3.3.0 */
+#define PF_AVX512F_INSTRUCTIONS_AVAILABLE 41        /** @since version 3.3.0 */
+#define PF_ARM_V8_INSTRUCTIONS_AVAILABLE 29         /** @since version 3.3.0 */
+#define PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE 30  /** @since version 3.3.0 */
+#define PF_ARM_V8_CRC32_INSTRUCTIONS_AVAILABLE 31   /** @since version 3.3.0 */
+#define PF_ARM_V81_ATOMIC_INSTRUCTIONS_AVAILABLE 34 /** @since version 3.3.0 */
+#define PF_ARM_V82_DP_INSTRUCTIONS_AVAILABLE 43     /** @since version 3.3.0 */
+#define PF_ARM_V83_JSCVT_INSTRUCTIONS_AVAILABLE 44  /** @since version 3.3.0 */
+#define PF_ARM_V83_LRCPC_INSTRUCTIONS_AVAILABLE 45  /** @since version 3.3.0 */
 
 #define PF_ARM_V4 0x80000001
 #define PF_ARM_V5 0x80000002
@@ -321,6 +335,26 @@ extern "C"
 #define GetTickCount64 winpr_GetTickCount64
 
 #endif
+
+#define WINPR_TIME_NS_TO_S(ns) ((ns) / 1000000000ull) /** @since version 3.4.0 */
+#define WINPR_TIME_NS_TO_MS(ns) ((ns) / 1000000ull)   /** @since version 3.4.0 */
+#define WINPR_TIME_NS_TO_US(ns) ((ns) / 1000ull)      /** @since version 3.4.0 */
+
+#define WINPR_TIME_NS_REM_NS(ns) ((ns) % 1000000000ull)               /** @since version 3.4.0 */
+#define WINPR_TIME_NS_REM_US(ns) (WINPR_TIME_NS_REM_NS(ns) / 1000ull) /** @since version 3.4.0 */
+#define WINPR_TIME_NS_REM_MS(ns) (WINPR_TIME_NS_REM_US(ns) / 1000ull) /** @since version 3.4.0 */
+
+	/** @brief get current tick count in nano second resolution
+	 *   @since version 3.4.0
+	 *   @return The tick count in nanosecond resolution since a undefined reference data
+	 */
+	WINPR_API UINT64 winpr_GetTickCount64NS(void);
+
+	/** @brief the the current time in nano second resolution
+	 *  @since version 3.4.0
+	 *  @return The nano seconds since 1.1.1970
+	 */
+	WINPR_API UINT64 winpr_GetUnixTimeNS(void);
 
 	WINPR_API DWORD GetTickCountPrecise(void);
 

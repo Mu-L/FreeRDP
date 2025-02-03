@@ -18,16 +18,11 @@
 define_channel_client_subsystem("printer" "cups" "")
 
 find_package(Cups 2.0 REQUIRED)
-set(${MODULE_PREFIX}_SRCS
-		printer_cups.c)
+set(${MODULE_PREFIX}_SRCS printer_cups.c)
 
-set(${MODULE_PREFIX}_LIBS
-    winpr
-    freerdp
-     ${CUPS_LIBRARIES}
-)
+set(${MODULE_PREFIX}_LIBS winpr freerdp ${CUPS_LIBRARIES})
 
 include_directories(..)
-include_directories(${CUPS_INCLUDE_DIRS})
+include_directories(SYSTEM ${CUPS_INCLUDE_DIRS})
 
 add_channel_client_subsystem_library(${MODULE_PREFIX} ${MODULE_NAME} ${CHANNEL_NAME} "" TRUE "")

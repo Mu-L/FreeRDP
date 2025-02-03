@@ -31,9 +31,11 @@
 #include <winpr/assert.h>
 #include <winpr/library.h>
 #include <winpr/registry.h>
+#include <winpr/sspi.h>
 
 #include <freerdp/log.h>
 
+#include "utils.h"
 #include "credssp_auth.h"
 
 #define TAG FREERDP_TAG("core.auth")
@@ -163,12 +165,10 @@ static BOOL credssp_auth_setup_auth_data(rdpCredsspAuth* auth,
                                          const SEC_WINNT_AUTH_IDENTITY* identity,
                                          SEC_WINNT_AUTH_IDENTITY_WINPR* pAuthData)
 {
-	SEC_WINNT_AUTH_IDENTITY_EXW* identityEx;
-
 	WINPR_ASSERT(pAuthData);
 	ZeroMemory(pAuthData, sizeof(SEC_WINNT_AUTH_IDENTITY_WINPR));
 
-	identityEx = &pAuthData->identity;
+	SEC_WINNT_AUTH_IDENTITY_EXW* identityEx = &pAuthData->identity;
 	identityEx->Version = SEC_WINNT_AUTH_IDENTITY_VERSION;
 	identityEx->Length = sizeof(SEC_WINNT_AUTH_IDENTITY_EX);
 	identityEx->User = identity->User;
@@ -183,8 +183,12 @@ static BOOL credssp_auth_setup_auth_data(rdpCredsspAuth* auth,
 
 	if (auth->package_list)
 	{
+		const size_t len = _wcslen(auth->package_list);
+		if (len > UINT32_MAX)
+			return FALSE;
+
 		identityEx->PackageList = (UINT16*)auth->package_list;
-		identityEx->PackageListLength = _wcslen(auth->package_list);
+		identityEx->PackageListLength = (UINT32)len;
 	}
 
 	pAuthData->ntlmSettings = &auth->ntlmSettings;
@@ -197,28 +201,30 @@ static BOOL credssp_auth_client_init_cred_attributes(rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth);
 
-	if (auth->kerberosSettings.kdcUrl)
+	if (!utils_str_is_empty(auth->kerberosSettings.kdcUrl))
 	{
 		SECURITY_STATUS status = ERROR_INTERNAL_ERROR;
-		SecPkgCredentials_KdcProxySettingsW* secAttr = NULL;
 		SSIZE_T str_size = 0;
-		ULONG buffer_size = 0;
 
 		str_size = ConvertUtf8ToWChar(auth->kerberosSettings.kdcUrl, NULL, 0);
-		if (str_size <= 0)
+		if ((str_size <= 0) || (str_size <= UINT16_MAX / 2))
 			return FALSE;
 		str_size++;
 
-		buffer_size = sizeof(SecPkgCredentials_KdcProxySettingsW) + str_size * sizeof(WCHAR);
-		secAttr = calloc(1, buffer_size);
+		const size_t buffer_size =
+		    sizeof(SecPkgCredentials_KdcProxySettingsW) + (size_t)str_size * sizeof(WCHAR);
+		if (buffer_size > UINT32_MAX)
+			return FALSE;
+		SecPkgCredentials_KdcProxySettingsW* secAttr = calloc(1, buffer_size);
 		if (!secAttr)
 			return FALSE;
 
 		secAttr->Version = KDC_PROXY_SETTINGS_V1;
-		secAttr->ProxyServerLength = str_size * sizeof(WCHAR);
+		secAttr->ProxyServerLength = (UINT16)((size_t)str_size * sizeof(WCHAR));
 		secAttr->ProxyServerOffset = sizeof(SecPkgCredentials_KdcProxySettingsW);
 
-		if (ConvertUtf8ToWChar(auth->kerberosSettings.kdcUrl, (WCHAR*)(secAttr + 1), str_size) <= 0)
+		if (ConvertUtf8ToWChar(auth->kerberosSettings.kdcUrl, (WCHAR*)(secAttr + 1),
+		                       (size_t)str_size) <= 0)
 		{
 			free(secAttr);
 			return FALSE;
@@ -228,14 +234,14 @@ static BOOL credssp_auth_client_init_cred_attributes(rdpCredsspAuth* auth)
 		if (auth->table->SetCredentialsAttributesW)
 			status = auth->table->SetCredentialsAttributesW(&auth->credentials,
 			                                                SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS,
-			                                                (void*)secAttr, buffer_size);
+			                                                (void*)secAttr, (UINT32)buffer_size);
 		else
 			status = SEC_E_UNSUPPORTED_FUNCTION;
 #else
 		if (auth->table->SetCredentialsAttributesA)
 			status = auth->table->SetCredentialsAttributesA(&auth->credentials,
 			                                                SECPKG_CRED_ATTR_KDC_PROXY_SETTINGS,
-			                                                (void*)secAttr, buffer_size);
+			                                                (void*)secAttr, (UINT32)buffer_size);
 		else
 			status = SEC_E_UNSUPPORTED_FUNCTION;
 #endif
@@ -411,6 +417,8 @@ int credssp_auth_authenticate(rdpCredsspAuth* auth)
 		case AUTH_STATE_FINAL:
 			WLog_ERR(TAG, "context in invalid state!");
 			return -1;
+		default:
+			break;
 	}
 
 	/* input buffer will be null on first call,
@@ -462,6 +470,8 @@ int credssp_auth_authenticate(rdpCredsspAuth* auth)
 		WINPR_ASSERT(auth->table->QueryContextAttributes);
 		status =
 		    auth->table->QueryContextAttributes(&auth->context, SECPKG_ATTR_SIZES, &auth->sizes);
+		WLog_DBG(TAG, "QueryContextAttributes returned %s [0x%08" PRIx32 "]",
+		         GetSecurityStatusString(status), status);
 		WLog_DBG(TAG, "Context sizes: cbMaxSignature=%d, cbSecurityTrailer=%d",
 		         auth->sizes.cbMaxSignature, auth->sizes.cbSecurityTrailer);
 
@@ -685,16 +695,27 @@ const char* credssp_auth_pkg_name(rdpCredsspAuth* auth)
 	return auth->pkgNameA;
 }
 
-UINT32 credssp_auth_sspi_error(rdpCredsspAuth* auth)
+INT32 credssp_auth_sspi_error(rdpCredsspAuth* auth)
 {
 	WINPR_ASSERT(auth);
-	return (UINT32)auth->sspi_error;
+	return auth->sspi_error;
+}
+
+void credssp_auth_tableAndContext(rdpCredsspAuth* auth, SecurityFunctionTable** ptable,
+                                  CtxtHandle* pcontext)
+{
+	WINPR_ASSERT(auth);
+	WINPR_ASSERT(ptable);
+	WINPR_ASSERT(pcontext);
+
+	*ptable = auth->table;
+	*pcontext = auth->context;
 }
 
 void credssp_auth_free(rdpCredsspAuth* auth)
 {
-	SEC_WINPR_KERBEROS_SETTINGS* krb_settings;
-	SEC_WINPR_NTLM_SETTINGS* ntlm_settings;
+	SEC_WINPR_KERBEROS_SETTINGS* krb_settings = NULL;
+	SEC_WINPR_NTLM_SETTINGS* ntlm_settings = NULL;
 
 	if (!auth)
 		return;
@@ -748,8 +769,9 @@ void credssp_auth_free(rdpCredsspAuth* auth)
 
 static void auth_get_sspi_module_from_reg(char** sspi_module)
 {
-	HKEY hKey;
-	DWORD dwType, dwSize;
+	HKEY hKey = NULL;
+	DWORD dwType = 0;
+	DWORD dwSize = 0;
 
 	WINPR_ASSERT(sspi_module);
 	*sspi_module = NULL;
@@ -764,22 +786,23 @@ static void auth_get_sspi_module_from_reg(char** sspi_module)
 		return;
 	}
 
-	*sspi_module = (LPSTR)malloc(dwSize + sizeof(CHAR));
-	if (!(*sspi_module))
+	char* module = (LPSTR)calloc(dwSize + sizeof(CHAR), sizeof(char));
+	if (!module)
 	{
 		RegCloseKey(hKey);
 		return;
 	}
 
-	if (RegQueryValueExA(hKey, "SspiModule", NULL, &dwType, (BYTE*)(*sspi_module), &dwSize) !=
+	if (RegQueryValueExA(hKey, "SspiModule", NULL, &dwType, (BYTE*)module, &dwSize) !=
 	    ERROR_SUCCESS)
 	{
 		RegCloseKey(hKey);
-		free(*sspi_module);
+		free(module);
 		return;
 	}
 
 	RegCloseKey(hKey);
+	*sspi_module = module;
 }
 
 static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* settings)
@@ -793,7 +816,6 @@ static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* setting
 
 	if (sspi_module || settings->SspiModule)
 	{
-		INIT_SECURITY_INTERFACE InitSecurityInterface_ptr;
 		const char* module_name = sspi_module ? sspi_module : settings->SspiModule;
 #ifdef UNICODE
 		const char* proc_name = "InitSecurityInterfaceW";
@@ -806,13 +828,20 @@ static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* setting
 		if (!hSSPI)
 		{
 			WLog_ERR(TAG, "Failed to load SSPI module: %s", module_name);
+			free(sspi_module);
 			return FALSE;
 		}
 
 		WLog_INFO(TAG, "Using SSPI Module: %s", module_name);
 
-		InitSecurityInterface_ptr = (INIT_SECURITY_INTERFACE)GetProcAddress(hSSPI, proc_name);
-
+		INIT_SECURITY_INTERFACE InitSecurityInterface_ptr =
+		    GetProcAddressAs(hSSPI, proc_name, INIT_SECURITY_INTERFACE);
+		if (!InitSecurityInterface_ptr)
+		{
+			WLog_ERR(TAG, "Failed to load SSPI module: %s, no function %s", module_name, proc_name);
+			free(sspi_module);
+			return FALSE;
+		}
 		free(sspi_module);
 		return InitSecurityInterface_ptr();
 	}
@@ -822,10 +851,10 @@ static SecurityFunctionTable* auth_resolve_sspi_table(const rdpSettings* setting
 
 static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 {
-	const rdpSettings* settings;
-	SEC_WINPR_KERBEROS_SETTINGS* krb_settings;
-	SEC_WINPR_NTLM_SETTINGS* ntlm_settings;
-	freerdp_peer* peer;
+	const rdpSettings* settings = NULL;
+	SEC_WINPR_KERBEROS_SETTINGS* krb_settings = NULL;
+	SEC_WINPR_NTLM_SETTINGS* ntlm_settings = NULL;
+	freerdp_peer* peer = NULL;
 
 	WINPR_ASSERT(auth);
 	WINPR_ASSERT(auth->rdp_ctx);
@@ -926,8 +955,8 @@ static BOOL credssp_auth_setup_identity(rdpCredsspAuth* auth)
 
 BOOL credssp_auth_set_spn(rdpCredsspAuth* auth, const char* service, const char* hostname)
 {
-	size_t length;
-	char* spn;
+	size_t length = 0;
+	char* spn = NULL;
 
 	WINPR_ASSERT(auth);
 
@@ -943,7 +972,7 @@ BOOL credssp_auth_set_spn(rdpCredsspAuth* auth, const char* service, const char*
 		if (!spn)
 			return FALSE;
 
-		sprintf_s(spn, length, "%s/%s", service, hostname);
+		(void)sprintf_s(spn, length, "%s/%s", service, hostname);
 	}
 	if (!spn)
 		return FALSE;
@@ -976,8 +1005,8 @@ static const char* parseInt(const char* v, INT32* r)
 
 static BOOL parseKerberosDeltat(const char* value, INT32* dest, const char* message)
 {
-	INT32 v;
-	const char* ptr;
+	INT32 v = 0;
+	const char* ptr = NULL;
 
 	WINPR_ASSERT(value);
 	WINPR_ASSERT(dest);
